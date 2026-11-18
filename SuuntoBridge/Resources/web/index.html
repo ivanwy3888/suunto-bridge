@@ -110,10 +110,9 @@
         </label>
         <label class="field gap-top">
           <span>客户端密钥</span>
-          <input id="secret" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴客户端密钥">
+          <input id="secret" type="text" autocomplete="off" spellcheck="false" placeholder="粘贴客户端密钥">
         </label>
         <div class="row">
-          <button class="btn ghost" id="saveSecretBtn">保存</button>
           <button class="btn primary" id="authBtn">登录并授权</button>
           <button class="btn ghost hidden" id="signOutBtn">断开</button>
         </div>
@@ -239,7 +238,7 @@
         <li>用浏览器打开 FitnessSyncer 的<b>开发者页面</b>：<span class="g-url">https://www.fitnesssyncer.com/account/developer?lang=zh</span>　没登录会先让你登录，没有账号就在那里免费注册一个</li>
         <li>在页面下面的「创建应用程序」里，类型保持<b>「个人应用程序」</b>，点<b>「创建」</b></li>
         <li>创建完，上面表格会多出一行「个人应用程序」。点开这一行，就能看到<b>客户端 ID</b> 和<b>客户端密钥</b>，两串都复制下来。<b>第一次创建就有，不用点「旋转访问键」</b>；那个键是密钥丢了、或者想换一把新的的时候才点，点了旧的那把立刻作废</li>
-        <li>回到程序第二个选项卡，把两串分别粘进「客户端 ID」「客户端密钥」，点<b>「保存」</b></li>
+        <li>回到程序第二个选项卡，把两串分别粘进「客户端 ID」「客户端密钥」，直接点<b>「登录并授权」</b>——程序会先把这两串存下来，再打开授权窗口</li>
         <li>点<b>「登录并授权」</b>，在弹窗里登录 FitnessSyncer 并同意，窗口会自己关</li>
         <li>点「换文件夹」选第一步那个文件夹，确认下面的条数</li>
         <li>点<b>「开始上传」</b>，等进度条走完</li>

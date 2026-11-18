@@ -479,7 +479,7 @@ final class Backend {
 
     func fsExchangeCode(_ code: String) -> [String: Any] {
         guard let secret = fsAuth["clientSecret"] as? String, !secret.isEmpty else {
-            return ["ok": false, "message": "还没保存客户端密钥"]
+            return ["ok": false, "message": "客户端密钥没拿到，回界面粘贴后再点「登录并授权」"]
         }
         let body = formBody([
             ("grant_type", "authorization_code"),
@@ -886,6 +886,8 @@ final class DragStripView: NSView {
 final class FsAuthWindow: NSObject, WKNavigationDelegate, NSWindowDelegate {
     private var window: NSWindow!
     private var web: WKWebView!
+    private var hint: NSTextField!
+    private var cancelBtn: NSButton!
     private var expectedState = ""
     private var destinationMode = false
     private var onFinish: (([String: Any]) -> Void)?
@@ -902,14 +904,60 @@ final class FsAuthWindow: NSObject, WKNavigationDelegate, NSWindowDelegate {
                          styleMask: [.titled, .closable, .resizable],
                          backing: .buffered, defer: false)
         w.title = destinationMode ? "登录颂拓国际" : "登录 FitnessSyncer"
-        web = WKWebView(frame: rect, configuration: WKWebViewConfiguration())
+
+        let container = NSView(frame: rect)
+        container.autoresizingMask = [.width, .height]
+
+        web = WKWebView(frame: NSRect(x: 0, y: 46, width: rect.width, height: rect.height - 46),
+                        configuration: WKWebViewConfiguration())
         web.navigationDelegate = self
         web.autoresizingMask = [.width, .height]
-        w.contentView = web
+        container.addSubview(web)
+
+        let bar = NSView(frame: NSRect(x: 0, y: 0, width: rect.width, height: 46))
+        bar.autoresizingMask = [.width, .maxYMargin]
+        let line = NSBox(frame: NSRect(x: 0, y: 45, width: rect.width, height: 1))
+        line.boxType = .separator
+        line.autoresizingMask = [.width, .minYMargin]
+        bar.addSubview(line)
+
+        hint = NSTextField(labelWithString: "")
+        hint.frame = NSRect(x: 16, y: 13, width: rect.width - 132, height: 20)
+        hint.font = .systemFont(ofSize: 11.5)
+        hint.textColor = .secondaryLabelColor
+        hint.lineBreakMode = .byTruncatingTail
+        hint.autoresizingMask = [.width]
+        bar.addSubview(hint)
+
+        cancelBtn = NSButton(title: "关闭", target: self, action: #selector(cancelTapped))
+        cancelBtn.bezelStyle = .rounded
+        cancelBtn.keyEquivalent = "\u{1b}"
+        cancelBtn.frame = NSRect(x: rect.width - 104, y: 9, width: 88, height: 28)
+        cancelBtn.autoresizingMask = [.minXMargin, .maxYMargin]
+        bar.addSubview(cancelBtn)
+
+        container.addSubview(bar)
+        w.contentView = container
         w.delegate = self
         window = w
         web.load(URLRequest(url: url))
         parent.beginSheet(w)
+    }
+
+    @objc private func cancelTapped() {
+        finish(code: "", state: "")
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        webView.evaluateJavaScript("(document.body||{}).innerText||''") { [weak self] v, _ in
+            guard let self = self, let s = v as? String, !s.isEmpty else { return }
+            let rejected = s.contains("请求无效") || s.contains("The request is invalid")
+            let denied = s.contains("拒绝") && s.contains("授权")
+            if rejected || denied {
+                self.hint.stringValue = "FitnessSyncer 拒绝了这个请求：回开发者页面重新复制 ID 和密钥再试"
+                self.hint.textColor = .systemRed
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
@@ -1104,7 +1152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 guard let self = self else { return }
                 let st = self.backend.fsAuthState()
                 guard (st["hasSecret"] as? Bool) == true else {
-                    self.reply(id: id, ok: false, data: ["message": "先填客户端 ID、粘贴密钥，点保存"])
+                    self.reply(id: id, ok: false, data: ["message": "先填客户端 ID、粘贴密钥，再点「登录并授权」"])
                     return
                 }
                 let state = UUID().uuidString.replacingOccurrences(of: "-", with: "")

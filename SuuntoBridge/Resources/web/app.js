@@ -479,17 +479,14 @@ $("stopExportBtn").addEventListener("click", () => { call("cancel").catch(() => 
 let uploadFolder = localStorage.getItem("uploadFolder") || "";
 let busyUpload = false;
 
-const dots = (n) => "•".repeat(Math.max(1, n || 8));
-
 function applyFsUI() {
   const { hasSecret, connected } = state.fs;
   const chipEl = $("fsChip");
   $("clientId").value = state.fs.clientId || "";
-  $("secret").value = hasSecret ? dots(state.fs.secretLength) : "";
-  $("secret").placeholder = "粘贴客户端密钥";
+  $("secret").value = "";
+  $("secret").placeholder = hasSecret ? "已保存，留空沿用；要换就粘贴新的" : "粘贴客户端密钥";
   $("clientId").disabled = connected;
   $("secret").disabled = connected;
-  $("saveSecretBtn").classList.toggle("hidden", connected);
   $("signOutBtn").classList.toggle("hidden", !hasSecret && !connected);
   $("uploadCard").classList.toggle("hidden", !connected);
   const authBtn = $("authBtn");
@@ -501,20 +498,15 @@ function applyFsUI() {
     authBtn.disabled = false;
     $("fsHint").className = "hint ok";
     $("fsHint").textContent = "授权有效，选好文件夹就能把 .fit 批量送进去。";
-  } else if (hasSecret) {
-    chip(chipEl, "待授权", "warn");
+  } else {
+    chip(chipEl, hasSecret ? "待授权" : "未连接", hasSecret ? "warn" : "");
     authBtn.textContent = "登录并授权";
     authBtn.className = "btn primary";
     authBtn.disabled = false;
     $("fsHint").className = "hint";
-    $("fsHint").textContent = "密钥已存好。点「登录并授权」，在弹出的窗口里登录 FitnessSyncer。";
-  } else {
-    chip(chipEl, "未连接", "");
-    authBtn.textContent = "先保存密钥";
-    authBtn.className = "btn primary";
-    authBtn.disabled = true;
-    $("fsHint").className = "hint";
-    $("fsHint").textContent = "两串都来自同一个 FitnessSyncer 个人应用程序：客户端 ID 在开发者页面，密钥点「旋转访问键」拿（只显示一次）。它们和令牌都只存在这台电脑上。";
+    $("fsHint").textContent = hasSecret
+      ? "点「登录并授权」，在弹出的窗口里登录 FitnessSyncer。框里留空就用上次存好的那对。"
+      : "把开发者页面上同一行应用程序的客户端 ID 和客户端密钥粘进来，点「登录并授权」即可，点的时候会自动保存。";
   }
   if (!uploadFolder) {
     $("uploadFolder").textContent = prettyPath(exportFolder) || "—";
@@ -568,39 +560,24 @@ async function refreshUploadStats() {
   renderUploadStats();
 }
 
-$("secret").addEventListener("focus", () => {
-  if (/^•+$/.test($("secret").value)) $("secret").select();
-});
-
-$("saveSecretBtn").addEventListener("click", async () => {
-  const raw = $("secret").value.trim();
-  const val = /^•+$/.test(raw) ? "" : raw;
-  const cid = $("clientId").value.trim();
-  if (!cid) { chip($("fsChip"), "先填客户端 ID", "warn"); $("clientId").focus(); return; }
-  if (!val && !state.fs.hasSecret) { chip($("fsChip"), "先粘贴密钥", "warn"); $("secret").focus(); return; }
-  const btn = $("saveSecretBtn");
-  btn.disabled = true;
-  try {
-    const r = await call("fsSaveSecret", { secret: val, clientId: cid });
-    state.fs = { hasSecret: true, connected: state.fs.connected, clientId: cid,
-                 secretLength: r.secretLength || val.length || state.fs.secretLength };
-    applyFsUI();
-    chip($("fsChip"), val ? "密钥已存" : "已保存", "ok");
-  } catch (e) {
-    chip($("fsChip"), e.message || "存不下", "bad");
-  } finally {
-    btn.disabled = false;
-  }
-});
 
 $("authBtn").addEventListener("click", async () => {
-  if (!state.fs.hasSecret) { $("secret").focus(); chip($("fsChip"), "先保存密钥", "warn"); return; }
+  const cid = $("clientId").value.trim();
+  const raw = $("secret").value.trim();
+  if (!cid) { chip($("fsChip"), "先填客户端 ID", "warn"); $("clientId").focus(); return; }
+  if (!raw && !state.fs.hasSecret) { chip($("fsChip"), "先粘贴客户端密钥", "warn"); $("secret").focus(); return; }
   const btn = $("authBtn");
   btn.disabled = true;
   chip($("fsChip"), "授权中…", "warn");
   $("fsHint").className = "hint";
   $("fsHint").textContent = "在弹出窗口里登录 FitnessSyncer 并点同意，窗口会自己关。";
   try {
+    const saved = await call("fsSaveSecret", { secret: raw, clientId: cid });
+    state.fs = Object.assign({}, state.fs, {
+      hasSecret: true,
+      clientId: cid,
+      secretLength: (saved && saved.secretLength) || raw.length || state.fs.secretLength
+    });
     await call("fsStartAuth");
     chip($("fsChip"), "已授权", "ok");
     state.fs.connected = true;
