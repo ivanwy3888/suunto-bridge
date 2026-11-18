@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>颂拓记录搬家</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="head">
+    <div class="brand">
+      <div class="logo">颂</div>
+      <div class="brand-text">
+        <h1>颂拓记录搬家</h1>
+        <p>把中国区的运动记录导出，再送进 FitnessSyncer 转到国际区</p>
+      </div>
+    </div>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-pane="one">下载记录</button>
+      <button class="tab" data-pane="two">上传到 FitnessSyncer</button>
+      <button class="tab" data-pane="three">传到颂拓国际</button>
+      <button class="tab" data-pane="four">使用说明</button>
+      <span class="tab-glow" id="tabGlow"></span>
+    </div>
+  </header>
+
+  <!-- 模块一 -->
+  <section class="pane active" id="pane-one">
+
+    <div class="card">
+      <div class="card-head">
+        <h2>颂拓账号</h2>
+        <span class="chip" id="cnChip">未登录</span>
+      </div>
+      <div class="grid2">
+        <label class="field">
+          <span>邮箱</span>
+          <input id="email" type="email" autocomplete="username" placeholder="你在颂拓注册的邮箱">
+        </label>
+        <label class="field">
+          <span>密码</span>
+          <input id="password" type="password" autocomplete="current-password" placeholder="只在本地使用，不保存">
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="loginBtn">登录</button>
+        <span class="hint" id="loginHint">密码直接交给颂拓服务器，程序不留存。</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>导出记录</h2>
+        <span class="chip quiet" id="exportChip">待开始</span>
+      </div>
+      <div class="scope-row">
+        <div class="seg" id="scopeSeg">
+          <button class="seg-item active" data-scope="all">全部记录</button>
+          <button class="seg-item" data-scope="range">指定时间段</button>
+        </div>
+        <div class="range-row hidden" id="rangeRow">
+          <input type="text" id="dateFrom" class="date-field" readonly placeholder="开始日期" aria-label="起始日期">
+          <span class="to">至</span>
+          <input type="text" id="dateTo" class="date-field" readonly placeholder="结束日期" aria-label="结束日期">
+        </div>
+      </div>
+      <div class="folder-row">
+        <div class="folder-path" id="exportFolder">—</div>
+        <button class="btn ghost" id="pickBtn">选择文件夹</button>
+      </div>
+      <div class="row">
+        <button class="btn primary big" id="exportBtn">查询记录</button>
+        <button class="btn ghost hidden" id="stopExportBtn">停止</button>
+        <div class="progress-wrap">
+          <div class="progress"><div class="bar" id="exportBar"></div></div>
+          <div class="progress-label"><span id="exportCount">0 / 0</span><span id="exportNote"></span></div>
+        </div>
+      </div>
+      <div class="tally" id="exportTally">选好范围后先查一下有多少条</div>
+      <div class="log" id="exportLog"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>会导出什么</h2>
+      </div>
+      <div class="pills">
+        <span>GPS 轨迹</span><span>心率</span><span>圈</span><span>功率</span>
+        <span>步频</span><span>海拔</span><span>温度</span><span>距离</span>
+      </div>
+      <p class="hint">每条记录导出颂拓服务器上的原始 .fit 文件，并生成一份「导出清单.csv」。中途关掉再开，已下好的会跳过。</p>
+    </div>
+
+  </section>
+
+  <!-- 模块二 -->
+  <section class="pane" id="pane-two">
+
+    <div class="card">
+      <div class="card-head">
+        <h2>连接 FitnessSyncer</h2>
+        <span class="chip quiet" id="fsChip">未连接</span>
+      </div>
+      <div id="secretRow">
+        <label class="field">
+          <span>客户端 ID</span>
+          <input id="clientId" type="text" class="mono" autocomplete="off" spellcheck="false" placeholder="开发者页面「客户端 ID」那一行">
+        </label>
+        <label class="field gap-top">
+          <span>客户端密钥</span>
+          <input id="secret" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴客户端密钥">
+        </label>
+        <div class="row">
+          <button class="btn ghost" id="saveSecretBtn">保存</button>
+          <button class="btn primary" id="authBtn">登录并授权</button>
+          <button class="btn ghost hidden" id="signOutBtn">断开</button>
+        </div>
+      </div>
+      <p class="hint" id="fsHint">两串都来自你自己在 FitnessSyncer 开发者页面创建的那个「个人应用程序」：点「创建」后就能看到并复制，不需要点「旋转访问键」。它们和令牌都只存在这台电脑上。</p>
+    </div>
+
+    <div class="card hidden" id="uploadCard">
+      <div class="card-head">
+        <h2>上传记录</h2>
+        <span class="chip quiet" id="uploadChip">待开始</span>
+      </div>
+      <div class="folder-row">
+        <div class="folder-path" id="uploadFolder">—</div>
+        <button class="btn ghost" id="pickUploadBtn">换文件夹</button>
+      </div>
+      <div class="tally" id="uploadStats">选好文件夹后显示本机记录数</div>
+      <div class="row">
+        <button class="btn primary big" id="uploadBtn">开始上传</button>
+        <button class="btn ghost hidden" id="stopUploadBtn">停止</button>
+        <div class="progress-wrap">
+          <div class="progress"><div class="bar" id="uploadBar"></div></div>
+          <div class="progress-label"><span id="uploadCount">0 / 0</span><span id="uploadNote"></span></div>
+        </div>
+      </div>
+      <div class="tally" id="uploadTally">新上传 0 · 已存在 0 · 失败 0</div>
+      <div class="log" id="uploadLog"></div>
+      <p class="hint">传过的文件记在文件夹里的「已上传.txt」，再点只补没传的。</p>
+    </div>
+
+  </section>
+
+  <!-- 模块三 -->
+  <section class="pane" id="pane-three">
+
+    <div class="card">
+      <div class="card-head">
+        <h2>颂拓国际</h2>
+        <span class="chip quiet" id="destChip">检查中…</span>
+      </div>
+      <div class="tally" id="destState">正在检查 FitnessSyncer 里的接收方…</div>
+      <div class="row">
+        <button class="btn ghost" id="destAuthBtn">登录颂拓国际</button>
+      </div>
+      <div class="row">
+        <button class="btn primary big" id="destBtn" disabled>检查中…</button>
+        <div class="progress-wrap">
+          <div class="progress"><div class="bar" id="destBar"></div></div>
+          <div class="progress-label"><span id="destCount">未开始</span><span id="destNote"></span></div>
+        </div>
+      </div>
+      <div class="log" id="destLog"></div>
+      <p class="hint">第一次用要先「登录颂拓国际」：弹出的窗口里用颂拓国际账号登录并同意；还没有这个账号，就在同一个窗口里注册一个，再回来点上传。之后每次点一下，FitnessSyncer 就把它那边的运动记录送进那个账号，关掉这个窗口也不影响。</p>
+    </div>
+
+  </section>
+
+  <!-- 模块四：使用说明 -->
+  <section class="pane" id="pane-four">
+
+    <div class="card">
+      <div class="card-head">
+        <h2>三步，把记录搬到国际区</h2>
+      </div>
+      <div class="g-flow">
+        <div class="g-node"><b>① 下载记录</b><span>从中国区颂拓，把每条活动的原始文件存到你的文件夹</span></div>
+        <span class="g-arrow">→</span>
+        <div class="g-node"><b>② 上传到 FitnessSyncer</b><span>相当于先寄存在一个中转站，它会读这些文件</span></div>
+        <span class="g-arrow">→</span>
+        <div class="g-node"><b>③ 传到颂拓国际</b><span>中转站再把记录送进你的国际区账号</span></div>
+      </div>
+      <p class="hint">三个选项卡就是这三步，按顺序做。第一次用大约十几分钟，之后每次只要点两下。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>开始前要准备好的</h2>
+      </div>
+      <ul class="g-list">
+        <li><b>中国区颂拓账号</b>的注册邮箱和密码（这个程序只搬中国区的记录）</li>
+        <li><b>FitnessSyncer 账号</b>，没有就免费注册一个</li>
+        <li>FitnessSyncer 里的<b>一对钥匙</b>：客户端 ID 和客户端密钥（第二步教你怎么拿）</li>
+        <li><b>颂拓国际区账号</b>；没有也不要紧，第三步的窗口里可以直接注册</li>
+        <li>一个用来放记录的<b>文件夹</b>，自己选，空文件夹也可以</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2><span class="g-num">1</span>下载记录</h2>
+        <span class="chip quiet">第一个选项卡</span>
+      </div>
+      <div class="g-step">
+        <ol class="g-list">
+          <li>填中国区颂拓的<b>邮箱</b>和<b>密码</b>，点「登录」。要填注册邮箱，手机号不行</li>
+          <li>点「选择文件夹」，挑一个存放记录的位置</li>
+          <li>范围一般选<b>全部记录</b>；只想搬某一段，就选「指定时间段」，点日期框在日历里选</li>
+          <li>点<b>「查询记录」</b>，先看到「找到 N 条」，按钮才变成「开始下载」</li>
+          <li>再点一下「开始下载」，等进度条走完</li>
+          <li>结束后文件夹里是这个活动的 .fit 文件和一份「导出清单.csv」</li>
+        </ol>
+        <svg class="g-art" viewBox="0 0 240 132" role="img" aria-label="下载记录示意">
+          <rect x="8" y="8" width="224" height="116" rx="14" fill="var(--field)" stroke="var(--field-line)"/>
+          <text x="24" y="30" font-size="10" fill="var(--ink-2)">邮箱</text>
+          <rect x="24" y="36" width="192" height="16" rx="8" fill="var(--surface)" stroke="var(--field-line)"/>
+          <text x="24" y="66" font-size="10" fill="var(--ink-2)">密码</text>
+          <rect x="24" y="72" width="192" height="16" rx="8" fill="var(--surface)" stroke="var(--field-line)"/>
+          <rect x="24" y="98" width="72" height="18" rx="9" fill="var(--accent)"/>
+          <text x="60" y="110.5" font-size="9.5" fill="#fff" text-anchor="middle">查询记录</text>
+          <rect x="108" y="106" width="108" height="6" rx="3" fill="var(--field-line)"/>
+          <rect x="108" y="106" width="64" height="6" rx="3" fill="var(--accent-2)"/>
+        </svg>
+      </div>
+      <div class="g-tip">中途停止或者关掉窗口都没关系：已经下好的会被跳过，下次点「开始下载」接着下。</div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2><span class="g-num">2</span>上传到 FitnessSyncer</h2>
+        <span class="chip quiet">第二个选项卡</span>
+      </div>
+      <ol class="g-list">
+        <li>用浏览器打开 FitnessSyncer 的<b>开发者页面</b>：<span class="g-url">https://www.fitnesssyncer.com/account/developer?lang=zh</span>　没登录会先让你登录，没有账号就在那里免费注册一个</li>
+        <li>在页面下面的「创建应用程序」里，类型保持<b>「个人应用程序」</b>，点<b>「创建」</b></li>
+        <li>创建完，上面表格会多出一行「个人应用程序」。点开这一行，就能看到<b>客户端 ID</b> 和<b>客户端密钥</b>，两串都复制下来。<b>第一次创建就有，不用点「旋转访问键」</b>；那个键是密钥丢了、或者想换一把新的的时候才点，点了旧的那把立刻作废</li>
+        <li>回到程序第二个选项卡，把两串分别粘进「客户端 ID」「客户端密钥」，点<b>「保存」</b></li>
+        <li>点<b>「登录并授权」</b>，在弹窗里登录 FitnessSyncer 并同意，窗口会自己关</li>
+        <li>点「换文件夹」选第一步那个文件夹，确认下面的条数</li>
+        <li>点<b>「开始上传」</b>，等进度条走完</li>
+      </ol>
+      <div class="g-shot">
+        <img src="fs-developer.png" alt="FitnessSyncer 开发者页面：上面是应用程序列表，下面是「创建应用程序」">
+      </div>
+      <div class="g-tip">传过的文件名会记在文件夹里的「<b>已上传.txt</b>」，再点只补没传的。这个文件别删，删了会重复上传。每条记录传完后，程序会自动清掉 FitnessSyncer 自动加上的那行文件名评论。</div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2><span class="g-num">3</span>传到颂拓国际</h2>
+        <span class="chip quiet">第三个选项卡</span>
+      </div>
+      <div class="g-step">
+        <ol class="g-list">
+          <li>第一次先点<b>「登录颂拓国际」</b>，在弹窗里登国际区账号并同意；没有账号，就在同一个窗口里注册再登</li>
+          <li>登录完成后，程序会在 FitnessSyncer 里自动建好接收方，不用你去网站建</li>
+          <li>点<b>「上传颂拓国际」</b>，状态变成绿色的<b>「同步完成」</b>就好了</li>
+          <li>关掉窗口也不影响，FitnessSyncer 的服务器会继续把记录送完</li>
+          <li>到颂拓国际 App 或网页刷新一下，就能看到记录</li>
+        </ol>
+        <svg class="g-art" viewBox="0 0 240 132" role="img" aria-label="传到颂拓国际示意">
+          <rect x="8" y="8" width="224" height="116" rx="14" fill="var(--field)" stroke="var(--field-line)"/>
+          <rect x="24" y="24" width="88" height="18" rx="9" fill="none" stroke="var(--field-line)"/>
+          <text x="68" y="36.5" font-size="9" fill="var(--ink-2)" text-anchor="middle">登录颂拓国际</text>
+          <rect x="24" y="56" width="108" height="20" rx="10" fill="var(--accent)"/>
+          <text x="78" y="69.5" font-size="9.5" fill="#fff" text-anchor="middle">上传颂拓国际</text>
+          <rect x="24" y="88" width="140" height="6" rx="3" fill="var(--field-line)"/>
+          <rect x="24" y="88" width="140" height="6" rx="3" fill="var(--ok)"/>
+          <circle cx="196" cy="91" r="9" fill="var(--ok)"/>
+          <path d="M192 91.5 l3 3 l5.5 -6" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <text x="24" y="112" font-size="9.5" fill="var(--ok)">同步完成</text>
+        </svg>
+      </div>
+      <div class="g-tip"><b>要注意的一点：</b>同步只送「上次同步之后的新活动」。第一次会把服务器上的历史记录一次送全；以后要是补传一条旧日期的记录，它不会再被送过去。也别先点同步、再补传旧记录。</div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>常见问题</h2>
+      </div>
+      <ul class="g-list g-faq">
+        <li><b>登录说密码不对？</b>要用注册时的邮箱，手机号登不进去；忘了密码去颂拓网站找回。</li>
+        <li><b>第二步报 401 或 403？</b>FitnessSyncer 的授权过期了，回第二个选项卡重新点「登录并授权」。</li>
+        <li><b>第三步一直显示排队中？</b>服务器在排队，等几分钟就好；切走再回来会自动刷新，按钮变成「重新检查」时点一下也能重读。</li>
+        <li><b>传重复了怎么办？</b>同一场活动传两次会变成两条，在 FitnessSyncer 网站里删掉多余的那条即可。</li>
+        <li><b>我的密码安全吗？</b>颂拓密码只交给颂拓服务器，程序不留存；FitnessSyncer 的钥匙和授权只存在这台电脑上；记录直接在你的电脑和对方服务器之间传。</li>
+      </ul>
+    </div>
+
+  </section>
+
+  <footer class="foot">所有操作都在这台电脑上完成 · 密码不出本机</footer>
+</div>
+
+<div class="cal hidden" id="cal">
+  <div class="cal-head">
+    <button class="cal-nav" id="calPrevY" aria-label="上一年">«</button>
+    <button class="cal-nav" id="calPrevM" aria-label="上个月">‹</button>
+    <span class="cal-title" id="calTitle"></span>
+    <button class="cal-nav" id="calNextM" aria-label="下个月">›</button>
+    <button class="cal-nav" id="calNextY" aria-label="下一年">»</button>
+  </div>
+  <div class="cal-week"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+  <div class="cal-grid" id="calGrid"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
