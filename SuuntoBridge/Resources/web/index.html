@@ -14,14 +14,13 @@
       <div class="logo">颂</div>
       <div class="brand-text">
         <h1>颂拓记录搬家</h1>
-        <p>把中国区的运动记录导出，再送进 FitnessSyncer 转到国际区</p>
+        <p>把中国区的运动记录导出，再导进颂拓国际区</p>
       </div>
     </div>
     <div class="tabs" id="tabs">
       <button class="tab active" data-pane="one">下载记录</button>
-      <button class="tab" data-pane="two">上传到 FitnessSyncer</button>
-      <button class="tab" data-pane="three">传到颂拓国际</button>
-      <button class="tab" data-pane="four">使用说明</button>
+      <button class="tab" data-pane="two">导入颂拓国际</button>
+      <button class="tab" data-pane="three">使用说明</button>
       <span class="tab-glow" id="tabGlow"></span>
     </div>
   </header>
@@ -100,81 +99,53 @@
 
     <div class="card">
       <div class="card-head">
-        <h2>连接 FitnessSyncer</h2>
-        <span class="chip quiet" id="fsChip">未连接</span>
-      </div>
-      <div class="row">
-        <button class="btn primary" id="authBtn">登录并授权</button>
-        <button class="btn ghost hidden" id="signOutBtn">断开</button>
-      </div>
-      <p class="hint" id="fsHint">点「登录并授权」，在弹窗里登录你自己的 FitnessSyncer 账号并同意即可，不用填任何东西。授权只在本机完成，令牌只存在这台电脑上。</p>
-    </div>
-
-    <div class="card hidden" id="uploadCard">
-      <div class="card-head">
-        <h2>上传记录</h2>
-        <span class="chip quiet" id="uploadChip">待开始</span>
+        <h2>导入到颂拓国际区</h2>
+        <span class="chip quiet" id="importChip">待开始</span>
       </div>
       <div class="folder-row">
-        <div class="folder-path" id="uploadFolder">—</div>
-        <button class="btn ghost" id="pickUploadBtn">换文件夹</button>
+        <div class="folder-path" id="importFolder">—</div>
+        <button class="btn ghost" id="openFinderBtn">在 Finder 中打开</button>
       </div>
-      <div class="tally" id="uploadStats">选好文件夹后显示本机记录数</div>
       <div class="row">
-        <button class="btn primary big" id="uploadBtn">开始上传</button>
-        <button class="btn ghost hidden" id="stopUploadBtn">停止</button>
+        <button class="btn primary big" id="startImportBtn">开始导入到颂拓国际</button>
+      </div>
+      <div class="row">
         <div class="progress-wrap">
-          <div class="progress"><div class="bar" id="uploadBar"></div></div>
-          <div class="progress-label"><span id="uploadCount">0 / 0</span><span id="uploadNote"></span></div>
+          <div class="progress"><div class="bar" id="importBar"></div></div>
+          <div class="progress-label"><span id="importCount">0 / 0</span><span id="importNote"></span></div>
         </div>
       </div>
-      <div class="tally" id="uploadTally">新上传 0 · 已存在 0 · 失败 0</div>
-      <div class="log" id="uploadLog"></div>
-      <p class="hint">传过的文件记在文件夹里的「已上传.txt」，再点只补没传的。</p>
+      <div class="tally" id="importTally">还没开始</div>
+      <div class="log" id="importLog"></div>
+      <p class="hint" id="importHint">点「开始导入」会弹出颂拓的登录窗口：第一次用在这里登一次颂拓国际区账号（邮箱+密码，登录状态会记住），登录好程序会自动把文件夹里的 .fit 打包送进去，不用再点别处。心率、GPS、圈都会一起带过去。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>要注意的</h2>
+      </div>
+      <ul class="g-list">
+        <li>颂拓不会自动帮你认重，<b>同一条记录导两次会出现两条</b>。导之前先看一眼文件夹里的条数，导完核对一下</li>
+        <li>之前已经通过别的办法（比如 FitnessSyncer）进过颂拓的那些，再导一遍会重复，需要在颂拓里把旧的删掉</li>
+        <li>导入页是颂拓官方的网页，登录状态只保存在这台电脑上；密码只在颂拓的页面上输，不经过这个程序</li>
+      </ul>
     </div>
 
   </section>
 
-  <!-- 模块三 -->
+  <!-- 模块三：使用说明 -->
   <section class="pane" id="pane-three">
 
     <div class="card">
       <div class="card-head">
-        <h2>颂拓国际</h2>
-        <span class="chip quiet" id="destChip">检查中…</span>
-      </div>
-      <div class="tally" id="destState">正在检查 FitnessSyncer 里的接收方…</div>
-      <div class="row">
-        <button class="btn ghost" id="destAuthBtn">登录颂拓国际</button>
-      </div>
-      <div class="row">
-        <button class="btn primary big" id="destBtn" disabled>检查中…</button>
-        <div class="progress-wrap">
-          <div class="progress"><div class="bar" id="destBar"></div></div>
-          <div class="progress-label"><span id="destCount">未开始</span><span id="destNote"></span></div>
-        </div>
-      </div>
-      <div class="log" id="destLog"></div>
-      <p class="hint">第一次用要先「登录颂拓国际」：弹出的窗口里用颂拓国际账号登录并同意；还没有这个账号，就在同一个窗口里注册一个，再回来点上传。之后每次点一下，FitnessSyncer 就把它那边的运动记录送进那个账号，关掉这个窗口也不影响。</p>
-    </div>
-
-  </section>
-
-  <!-- 模块四：使用说明 -->
-  <section class="pane" id="pane-four">
-
-    <div class="card">
-      <div class="card-head">
-        <h2>三步，把记录搬到国际区</h2>
+        <h2>两步，把记录搬到国际区</h2>
       </div>
       <div class="g-flow">
         <div class="g-node"><b>① 下载记录</b><span>从中国区颂拓，把每条活动的原始文件存到你的文件夹</span></div>
         <span class="g-arrow">→</span>
-        <div class="g-node"><b>② 上传到 FitnessSyncer</b><span>相当于先寄存在一个中转站，它会读这些文件</span></div>
-        <span class="g-arrow">→</span>
-        <div class="g-node"><b>③ 传到颂拓国际</b><span>中转站再把记录送进你的国际区账号</span></div>
+        <div class="g-node"><b>② 导入颂拓国际</b><span>程序里登一次颂拓国际区账号，之后自动把文件全送进去</span></div>
       </div>
-      <p class="hint">三个选项卡就是这三步，按顺序做。第一次用大约十几分钟，之后每次只要点两下。</p>
+      <p class="hint">两个选项卡就是这两步，按顺序做。第一次用大约十几分钟，之后每次只要点两下。</p>
     </div>
 
     <div class="card">
@@ -182,9 +153,8 @@
         <h2>开始前要准备好的</h2>
       </div>
       <ul class="g-list">
-        <li><b>中国区颂拓账号</b>的注册邮箱和密码（这个程序只搬中国区的记录）</li>
-        <li><b>FitnessSyncer 账号</b>，没有就免费注册一个</li>
-        <li><b>颂拓国际区账号</b>；没有也不要紧，第三步的窗口里可以直接注册</li>
+        <li><b>中国区颂拓账号</b>的注册邮箱和密码（这个程序只从中国区取记录）</li>
+        <li><b>颂拓国际区账号</b>的注册邮箱和密码；没有的话，导入页里可以注册</li>
         <li>一个用来放记录的<b>文件夹</b>，自己选，空文件夹也可以</li>
       </ul>
     </div>
@@ -220,45 +190,30 @@
 
     <div class="card">
       <div class="card-head">
-        <h2><span class="g-num">2</span>上传到 FitnessSyncer</h2>
+        <h2><span class="g-num">2</span>导入颂拓国际</h2>
         <span class="chip quiet">第二个选项卡</span>
-      </div>
-      <ol class="g-list">
-        <li>程序里已经内置好入口，你只需要<b>自己的 FitnessSyncer 账号</b>（没有就在授权窗口里免费注册一个）</li>
-        <li>到第二个选项卡，点<b>「登录并授权」</b>，在弹窗里登录 FitnessSyncer 并点同意，窗口会自己关；<b>不用填任何 ID 或密钥</b></li>
-        <li>点「换文件夹」选第一步那个文件夹，确认下面的条数</li>
-        <li>点<b>「开始上传」</b>，等进度条走完</li>
-      </ol>
-      <div class="g-tip">传过的文件名会记在文件夹里的「<b>已上传.txt</b>」，再点只补没传的。这个文件别删，删了会重复上传。每条记录传完后，程序会自动清掉 FitnessSyncer 自动加上的那行文件名评论。</div>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <h2><span class="g-num">3</span>传到颂拓国际</h2>
-        <span class="chip quiet">第三个选项卡</span>
       </div>
       <div class="g-step">
         <ol class="g-list">
-          <li>第一次先点<b>「登录颂拓国际」</b>，在弹窗里登国际区账号并同意；没有账号，就在同一个窗口里注册再登</li>
-          <li>登录完成后，程序会在 FitnessSyncer 里自动建好接收方，不用你去网站建</li>
-          <li>点<b>「上传颂拓国际」</b>，状态变成绿色的<b>「同步完成」</b>就好了</li>
-          <li>关掉窗口也不影响，FitnessSyncer 的服务器会继续把记录送完</li>
-          <li>到颂拓国际 App 或网页刷新一下，就能看到记录</li>
+          <li>到第二个选项卡，点<b>「开始导入到颂拓国际」</b>，会弹出一个登录窗口</li>
+          <li>在窗口里用<b>颂拓国际区账号</b>登录一次，登录状态会记住，下次不用再登</li>
+          <li>登录好就自动开始上传，主窗口里能看进度；不用拖文件、不用点页面上的东西</li>
+          <li>等进度条走完，到颂拓国际 App 或网页里看一眼曲线和地图在不在</li>
         </ol>
-        <svg class="g-art" viewBox="0 0 240 132" role="img" aria-label="传到颂拓国际示意">
+        <svg class="g-art" viewBox="0 0 240 132" role="img" aria-label="导入颂拓国际示意">
           <rect x="8" y="8" width="224" height="116" rx="14" fill="var(--field)" stroke="var(--field-line)"/>
           <rect x="24" y="24" width="88" height="18" rx="9" fill="none" stroke="var(--field-line)"/>
           <text x="68" y="36.5" font-size="9" fill="var(--ink-2)" text-anchor="middle">登录颂拓国际</text>
           <rect x="24" y="56" width="108" height="20" rx="10" fill="var(--accent)"/>
-          <text x="78" y="69.5" font-size="9.5" fill="#fff" text-anchor="middle">上传颂拓国际</text>
+          <text x="78" y="69.5" font-size="9.5" fill="#fff" text-anchor="middle">自动上传</text>
           <rect x="24" y="88" width="140" height="6" rx="3" fill="var(--field-line)"/>
           <rect x="24" y="88" width="140" height="6" rx="3" fill="var(--ok)"/>
           <circle cx="196" cy="91" r="9" fill="var(--ok)"/>
           <path d="M192 91.5 l3 3 l5.5 -6" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          <text x="24" y="112" font-size="9.5" fill="var(--ok)">同步完成</text>
+          <text x="24" y="112" font-size="9.5" fill="var(--ok)">导入完成，曲线齐全</text>
         </svg>
       </div>
-      <div class="g-tip"><b>要注意的一点：</b>同步只送「上次同步之后的新活动」。第一次会把服务器上的历史记录一次送全；以后要是补传一条旧日期的记录，它不会再被送过去。也别先点同步、再补传旧记录。</div>
+      <div class="g-tip"><b>要注意：</b>颂拓不会自动认重，同一条记录导两次会变成两条。之前已经通过 FitnessSyncer 进过颂拓的那批，要先去颂拓里删掉，否则会重复。</div>
     </div>
 
     <div class="card">
@@ -267,10 +222,10 @@
       </div>
       <ul class="g-list g-faq">
         <li><b>登录说密码不对？</b>要用注册时的邮箱，手机号登不进去；忘了密码去颂拓网站找回。</li>
-        <li><b>第二步报 401 或 403？</b>FitnessSyncer 的授权过期了，回第二个选项卡重新点「登录并授权」。</li>
-        <li><b>第三步一直显示排队中？</b>服务器在排队，等几分钟就好；切走再回来会自动刷新，按钮变成「重新检查」时点一下也能重读。</li>
-        <li><b>传重复了怎么办？</b>同一场活动传两次会变成两条，在 FitnessSyncer 网站里删掉多余的那条即可。</li>
-        <li><b>我的密码安全吗？</b>颂拓密码只交给颂拓服务器，程序不留存；FitnessSyncer 的钥匙和授权只存在这台电脑上；记录直接在你的电脑和对方服务器之间传。</li>
+        <li><b>点了开始导入没动静？</b>会弹出一个颂拓的登录窗口，先在窗口里登录；登录好它会自己往下走。</li>
+        <li><b>卡在「等你登录」怎么办？</b>窗口登录成功后再点一次「开始导入到颂拓国际」就行。</li>
+        <li><b>之前用 FitnessSyncer 进去的那些怎么办？</b>先在颂拓里删掉那一批，再统一从这里导。</li>
+        <li><b>我的密码安全吗？</b>密码只在颂拓的页面上输，不经过这个程序；登录状态只保存在这台电脑上。</li>
       </ul>
     </div>
 

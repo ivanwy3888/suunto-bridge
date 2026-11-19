@@ -5,19 +5,10 @@ const HAS_BRIDGE = !!(window.webkit && window.webkit.messageHandlers && window.w
 
 // 浏览器里直接打开时用假数据预览样子
 const MOCK = {
-  status: { hasCN: true, hasGlobal: false, emailCN: "you@example.com", defaultFolder: "/Users/you/Downloads/颂拓导出", fs: { hasSecret: false, connected: false, clientId: "" }, },
-  fsStartAuth: { ok: true },
-  fsConnect: { ok: true, sources: [
-    { id: "1", name: "Suunto (中国区)" }, { id: "2", name: "Strava" }, { id: "3", name: "Garmin" }
-  ] },
-  fsSignOut: { ok: true },
-  folderStats: { ok: true, total: 256, done: 4, pending: 252 },
-  destStatus: { ok: true, found: true, authed: true, name: "颂拓外区", lastDate: Date.now(), lastError: "",
-                syncQueue: "COMPLETED", syncStatus: "Complete", syncUpdate: "Success", syncOk: true },
-  destPrepare: { ok: true, needAuth: false, name: "颂拓外区", message: "颂拓国际已连上" },
-  destSync: { ok: true, message: "已提交给 FitnessSyncer，正在往颂拓国际送记录" },
+  status: { hasCN: true, hasGlobal: false, emailCN: "you@example.com", defaultFolder: "/Users/you/Downloads/颂拓导出" },
   count: { total: 256 },
   logout: { ok: true },
+  openExportFolder: { ok: true },
   export: async (emit) => {
     const total = 256;
     for (let i = 1; i <= total; i += 16) {
@@ -26,26 +17,21 @@ const MOCK = {
     }
     return { total, downloaded: 256, skipped: 0, failed: 0, failures: [], csv: "/Users/you/Downloads/颂拓导出/导出清单.csv" };
   },
-  fsUpload: async (emit) => {
-    const total = 256;
-    for (let i = 1; i <= total; i += 8) {
-      emit({ type: "item", index: i, total, name: `20241130-0951_a22_sampleactivity01.fit`, note: "", ok: i, skip: 0, fail: 0 });
-      await new Promise((r) => setTimeout(r, 12));
+  suuntoImportStart: async (emit) => {
+    for (let i = 1; i <= 5; i++) {
+      emit({ type: "progress", percent: i * 20 });
+      await new Promise((r) => setTimeout(r, 80));
     }
-    return { ok: true, total, uploaded: total, skipped: 0, failed: 0, failures: [], source: "FitnessSyncer" };
+    return { success: 256, failed: 0 };
   },
 };
 
 function call(cmd, payload = {}) {
   return new Promise((resolve, reject) => {
     if (!HAS_BRIDGE) {
-      if (cmd === "export") {
-        MOCK.export((e) => { const f = onEvent.export; if (f) f(e); }).then(resolve, reject);
-        return;
-      }
-      if (cmd === "fsUpload") {
-        MOCK.uploadFolder = payload.folder || MOCK.uploadFolder;
-        MOCK.fsUpload((e) => { const f = onEvent.upload; if (f) f(e); }).then(resolve, reject);
+      if (cmd === "export" || cmd === "suuntoImportStart") {
+        const f = onEvent[cmd === "export" ? "export" : "import"];
+        MOCK[cmd]((e) => { if (f) f(e); }).then(resolve, reject);
         return;
       }
       if (cmd === "login") { resolve({ ok: true }); return; }
@@ -69,10 +55,10 @@ window.__bridge = (msg) => {
   else p.reject(msg.data || { message: "操作失败" });
 };
 
-const onEvent = { export: null, upload: null };
+const onEvent = { export: null, import: null };
 window.__event = (e) => {
   if (onEvent.export) onEvent.export(e);
-  if (onEvent.upload) onEvent.upload(e);
+  if (onEvent.import) onEvent.import(e);
 };
 
 const $ = (id) => document.getElementById(id);
@@ -107,7 +93,6 @@ tabButtons.forEach((b) => {
     });
     sizeGlow();
     setTimeout(reportHeight, 120);
-    if (activePane === "three") refreshDest(true);
   });
 });
 window.addEventListener("resize", sizeGlow);
@@ -145,7 +130,7 @@ let exportScope = "all";
 let exportQueried = false;
 let busyExport = false;
 
-const state = { hasCN: false, hasGlobal: false, fs: { hasSecret: false, connected: false, clientId: "", secretLength: 0 } };
+const state = { hasCN: false, hasGlobal: false };
 const savedEmail = (r) =>
   localStorage.getItem("email_" + r) || state[r === "cn" ? "emailCN" : "emailGlobal"] || "";
 
@@ -180,17 +165,12 @@ async function init() {
   state.hasGlobal = !!st.hasGlobal;
   state.emailCN = st.emailCN || "";
   state.emailGlobal = st.emailGlobal || "";
-  state.fs = st.fs || { hasSecret: false, connected: false, clientId: "", secretLength: 0 };
   exportFolder = localStorage.getItem("exportFolder") || st.defaultFolder || "";
   showFolder($("exportFolder"), exportFolder);
+  showFolder($("importFolder"), exportFolder);
   initScope();
   applyLoginUI();
-  applyFsUI();
-  renderUploadStats();
-  refreshUploadStats();
-  refreshDest(true);
   sizeGlow();
-  if (state.fs.connected) verifyToken();
 }
 
 // ---------- 导出范围 ----------
@@ -317,6 +297,7 @@ $("pickBtn").addEventListener("click", async () => {
     exportFolder = r.path;
     localStorage.setItem("exportFolder", exportFolder);
     showFolder($("exportFolder"), exportFolder);
+    showFolder($("importFolder"), exportFolder);
   } catch (e) { /* 取消 */ }
 });
 
@@ -474,437 +455,64 @@ $("exportBtn").addEventListener("click", async () => {
 
 $("stopExportBtn").addEventListener("click", () => { call("cancel").catch(() => {}); });
 
-// ---------- 模块二 ----------
-let uploadFolder = localStorage.getItem("uploadFolder") || "";
-let busyUpload = false;
+// ---------- 模块二：导入颂拓国际 ----------
 
-function applyFsUI() {
-  const connected = !!state.fs.connected;
-  const chipEl = $("fsChip");
-  $("signOutBtn").classList.toggle("hidden", !connected);
-  $("uploadCard").classList.toggle("hidden", !connected);
-  const authBtn = $("authBtn");
+$("startImportBtn").addEventListener("click", async () => {
+  const chipEl = $("importChip");
+  if (!exportFolder) { chip(chipEl, "先在「下载记录」里选文件夹", "warn"); return; }
 
-  if (connected) {
-    chip(chipEl, "已连接", "ok");
-    authBtn.textContent = "重新授权";
-    authBtn.className = "btn ghost";
-    authBtn.disabled = false;
-    $("fsHint").className = "hint ok";
-    $("fsHint").textContent = "授权有效，选好文件夹就能把 .fit 批量送进去。";
-  } else {
-    chip(chipEl, "未连接", "");
-    authBtn.textContent = "登录并授权";
-    authBtn.className = "btn primary";
-    authBtn.disabled = false;
-    $("fsHint").className = "hint";
-    $("fsHint").textContent = "点「登录并授权」，在弹窗里登录你自己的 FitnessSyncer 账号并同意即可，不用填任何东西。";
-  }
-  if (!uploadFolder) {
-    $("uploadFolder").textContent = prettyPath(exportFolder) || "—";
-  } else {
-    showFolder($("uploadFolder"), uploadFolder);
-  }
-}
-
-async function verifyToken() {
-  try {
-    await call("fsConnect");
-    refreshUploadStats();
-    refreshDest();
-    return true;
-  } catch (e) {
-    chip($("fsChip"), "令牌失效", "bad");
-    $("fsHint").className = "hint";
-    $("fsHint").textContent = "连不上 FitnessSyncer，点「登录并授权」再来一次。";
-    return false;
-  }
-}
-
-// —— 条数 ——
-const upStats = { total: 0, done: 0, pending: null };
-
-function renderUploadStats() {
-  const el = $("uploadStats");
-  if (upStats.pending === null) {
-    el.textContent = "选好文件夹后显示本机记录数";
-    return;
-  }
-  el.textContent = `本机 ${upStats.total} 条记录 · 待上传 ${upStats.pending} 条` +
-                   (upStats.done ? `，已传 ${upStats.done}` : "");
-}
-
-async function refreshUploadStats() {
-  const folder = uploadFolder || exportFolder || "";
-  if (!folder) {
-    upStats.total = 0; upStats.done = 0; upStats.pending = null;
-    renderUploadStats();
-    return;
-  }
-  try {
-    const r = await call("folderStats", { folder });
-    upStats.total = r.total;
-    upStats.done = r.done;
-    upStats.pending = r.pending;
-  } catch (e) {
-    upStats.total = 0; upStats.done = 0; upStats.pending = null;
-  }
-  renderUploadStats();
-}
-
-
-$("authBtn").addEventListener("click", async () => {
-  const btn = $("authBtn");
+  const btn = $("startImportBtn");
+  const bar = $("importBar");
+  const countEl = $("importCount");
+  const noteEl = $("importNote");
+  const tallyEl = $("importTally");
   btn.disabled = true;
-  chip($("fsChip"), "授权中…", "warn");
-  $("fsHint").className = "hint";
-  $("fsHint").textContent = "在弹出窗口里登录 FitnessSyncer 并点同意，窗口会自己关。";
-  try {
-    await call("fsStartAuth");
-    chip($("fsChip"), "已授权", "ok");
-    state.fs.connected = true;
-    applyFsUI();
-    await verifyToken();
-  } catch (e) {
-    chip($("fsChip"), e.message || "没授权成", "bad");
-    $("fsHint").className = "hint";
-    $("fsHint").textContent = e.message || "没授权成，再点一次试试。";
-  } finally {
-    btn.disabled = false;
-  }
-});
+  chip(chipEl, "准备中…", "warn");
+  $("importLog").textContent = "";
+  tallyEl.textContent = "正在打开颂拓的窗口…";
+  bar.style.width = "0%";
+  countEl.textContent = "0 / 0";
+  noteEl.textContent = "";
 
-$("signOutBtn").addEventListener("click", async () => {
-  $("signOutBtn").disabled = true;
-  try {
-    await call("fsSignOut");
-    state.fs.connected = false;
-    applyFsUI();
-    refreshUploadStats();
-  } catch (e) {
-    chip($("fsChip"), e.message || "断开失败", "bad");
-  } finally {
-    $("signOutBtn").disabled = false;
-  }
-});
-
-$("pickUploadBtn").addEventListener("click", async () => {
-  try {
-    const r = await call("pickFolder");
-    uploadFolder = r.path;
-    localStorage.setItem("uploadFolder", uploadFolder);
-    showFolder($("uploadFolder"), uploadFolder);
-    refreshUploadStats();
-  } catch (e) { /* 取消 */ }
-});
-
-$("uploadBtn").addEventListener("click", async () => {
-  const folder = uploadFolder || exportFolder;
-  if (!folder) { chip($("uploadChip"), "先选文件夹", "warn"); return; }
-
-  busyUpload = true;
-  $("uploadBtn").disabled = true;
-  $("stopUploadBtn").classList.remove("hidden");
-  $("uploadLog").textContent = "";
-  chip($("uploadChip"), "上传中…", "warn");
-  setProgress($("uploadBar"), $("uploadCount"), $("uploadNote"), 0, upStats.total, "");
-  const t = { ok: 0, skip: 0, fail: 0 };
-  const tallyEl = $("uploadTally");
-  const showTally = () => {
-    tallyEl.textContent = `新上传 ${t.ok} · 已存在 ${t.skip} · 失败 ${t.fail}`;
-  };
-  showTally();
-
-  onEvent.upload = (e) => {
+  onEvent.import = (e) => {
     if (e.type === "stage") {
-      $("uploadNote").textContent = e.text || "";
-      logLine($("uploadLog"), "· " + e.text);
-    } else if (e.type === "item") {
-      if (typeof e.ok === "number") t.ok = e.ok;
-      if (typeof e.skip === "number") t.skip = e.skip;
-      if (typeof e.fail === "number") t.fail = e.fail;
-      showTally();
-      setProgress($("uploadBar"), $("uploadCount"), $("uploadNote"), e.index, e.total, e.note || "");
-      logLine($("uploadLog"),
-        `${e.index}/${e.total} ${e.name}${e.note ? " · " + e.note : ""}`,
-        e.note && e.note.startsWith("HTTP") ? "bad" : "");
+      noteEl.textContent = e.text || "";
+      tallyEl.textContent = e.text || "";
+      logLine($("importLog"), "· " + e.text);
+    } else if (e.type === "progress") {
+      const p = Math.max(0, Math.min(100, e.percent || 0));
+      bar.style.width = p + "%";
+      countEl.textContent = p + "%";
+      noteEl.textContent = "上传中…";
+      tallyEl.textContent = `上传中 ${p}%`;
     }
   };
 
   try {
-    const r = await call("fsUpload", { folder });
-    t.ok = r.uploaded;
-    t.skip = r.skipped;
-    t.fail = r.failed;
-    showTally();
-    setProgress($("uploadBar"), $("uploadCount"), $("uploadNote"), r.total, r.total, r.stopped ? "已停止" : "完成");
-    chip($("uploadChip"), r.stopped ? "已停止" : "完成", r.failed ? "warn" : "ok");
-    if (r.source) logLine($("uploadLog"), "写进：" + r.source);
-    logLine($("uploadLog"),
-      `完成：新上传 ${r.uploaded}，已存在 ${r.skipped}，失败 ${r.failed}`,
-      r.failed ? "bad" : "ok");
-  } catch (e) {
-    chip($("uploadChip"), e.message || "失败", "bad");
-    logLine($("uploadLog"), e.message || "失败", "bad");
-  } finally {
-    busyUpload = false;
-    $("uploadBtn").disabled = false;
-    $("stopUploadBtn").classList.add("hidden");
-    onEvent.upload = null;
-    refreshUploadStats();
-  }
-});
-
-$("stopUploadBtn").addEventListener("click", () => { call("cancel").catch(() => {}); });
-
-// ---------- 模块三 ----------
-let destState = null;
-let destPollGen = 0;
-let destRanThisSession = false;
-let destRunning = false;
-let destBusy = false;
-
-const pad2 = (n) => String(n).padStart(2, "0");
-function fmtDate(ms) {
-  if (!ms) return "";
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-function setDestButtonStyle(authed) {
-  $("destAuthBtn").className = authed ? "btn ghost" : "btn primary";
-  $("destBtn").className = authed ? "btn primary big" : "btn ghost big";
-}
-
-function renderDest() {
-  const s = destState;
-  if (!s) return;
-  const chipEl = $("destChip");
-  const stateEl = $("destState");
-  const btn = $("destBtn");
-  const authBtn = $("destAuthBtn");
-  const fsOn = !!(state.fs && state.fs.connected);
-
-  if (!fsOn || s.needFs) {
-    chip(chipEl, "未连接", "");
-    stateEl.textContent = "第一步：先到「上传到 FitnessSyncer」里登录授权，再回来。";
-    setDestButtonStyle(false);
-    btn.style.display = "none";
-    btn.dataset.action = "gotoFs";
-    authBtn.disabled = false;
-    authBtn.textContent = "登录颂拓国际";
-    setDestBar("", null);
-    return;
-  }
-  btn.style.display = "";
-  if (!s.ok) {
-    chip(chipEl, "连不上", "bad");
-    stateEl.textContent = s.message || "读不到接收方状态";
-    setDestButtonStyle(false);
-    btn.disabled = false;
-    btn.textContent = "重新检查";
-    btn.dataset.action = "refresh";
-    authBtn.disabled = false;
-    authBtn.textContent = "登录颂拓国际";
-    setDestBar("", null);
-    return;
-  }
-
-  const authed = !!s.authed;
-  setDestButtonStyle(authed);
-  authBtn.disabled = false;
-  authBtn.textContent = authed ? "重新登录颂拓国际" : "登录颂拓国际";
-
-  if (!s.found) {
-    chip(chipEl, "未连接", "");
-    stateEl.textContent = "第二步：点「登录颂拓国际」，会建好接收方并带你去登颂拓。";
-    btn.disabled = true;
-    btn.textContent = "先登录颂拓国际";
-    btn.dataset.action = "sync";
-    setDestBar("", null);
-    return;
-  }
-  if (!authed) {
-    chip(chipEl, "待登录", "warn");
-    stateEl.textContent = `接收方「${s.name}」已建好，还差第二步：点「登录颂拓国际」把账号连上。`;
-    btn.disabled = true;
-    btn.textContent = "先登录颂拓国际";
-    btn.dataset.action = "sync";
-    setDestBar("", null);
-    return;
-  }
-
-  const parts = [`接收方「${s.name}」已连上颂拓国际`];
-  if (s.lastDate) parts.push(`上次同步 ${fmtDate(s.lastDate)}`);
-  if (s.lastError) parts.push(`上次报错：${s.lastError}`);
-  stateEl.textContent = parts.join(" · ");
-
-  const q = (s.syncQueue || "").toUpperCase();
-  if (destRunning || q === "RUNNING" || q === "PENDING" || q === "QUEUED") {
-    chip(chipEl, "同步中…", "ok");
-    btn.disabled = true;
-    btn.textContent = "同步中…";
-    setDestBar(destRunning ? "RUNNING" : (q || "RUNNING"), s);
-  } else if (q === "COMPLETED") {
-    chip(chipEl, s.syncOk ? (destRanThisSession ? "同步完成" : "上次成功") : "上次失败",
-         s.syncOk ? "ok" : "bad");
-    btn.disabled = false;
-    btn.textContent = "上传颂拓国际";
-  } else {
-    chip(chipEl, "已连接", "ok");
-    btn.disabled = false;
-    btn.textContent = "上传颂拓国际";
-  }
-  btn.dataset.action = "sync";
-  if (!destRunning) setDestBar(q, s);
-}
-
-function setDestBar(q, s) {
-  const bar = $("destBar");
-  const label = $("destCount");
-  const note = $("destNote");
-  if (!bar) return;
-  if (["RUNNING", "PENDING", "QUEUED", "STARTED", "PROCESSING"].includes(q)) {
-    bar.classList.add("indeterminate");
-    bar.style.width = "";
-    label.textContent = q === "RUNNING" ? "同步中" : "排队中";
-    note.textContent = "FitnessSyncer 服务器在跑，给它一点时间";
-    return;
-  }
-  bar.classList.remove("indeterminate");
-  const good = !s || s.syncOk !== false;
-  if (q === "COMPLETED" && good) {
+    const r = await call("suuntoImportStart", { folder: exportFolder });
     bar.style.width = "100%";
-    label.textContent = destRanThisSession ? "已完成" : "上次已完成";
-    note.textContent = "";
-  } else if (q === "COMPLETED") {
-    bar.style.width = "0%";
-    label.textContent = "上次没成功";
-    note.textContent = (s && s.lastError) || "";
-  } else {
-    bar.style.width = "0%";
-    label.textContent = "未开始";
-    note.textContent = "";
-  }
-}
-
-async function refreshDest(startPollIfActive = false) {
-  try {
-    destState = await call("destStatus");
+    countEl.textContent = "完成";
+    noteEl.textContent = "";
+    chip(chipEl, r.failed ? "部分失败" : "导入完成", r.failed ? "warn" : "ok");
+    tallyEl.textContent = `成功 ${r.success} 条 · 失败 ${r.failed} 条`;
+    logLine($("importLog"), `颂拓回执：成功 ${r.success} 条，失败 ${r.failed} 条`, r.failed ? "warn" : "ok");
+    if (r.failed) logLine($("importLog"), "有失败的话，到颂拓里核对一下条数；再导一次会把已经成功的也重复导入", "warn");
   } catch (e) {
-    destState = { ok: false, message: e.message || "读不到接收方状态" };
-  }
-  renderDest();
-  if (startPollIfActive) {
-    const q = ((destState && destState.syncQueue) || "").toUpperCase();
-    if (["RUNNING", "PENDING", "QUEUED"].includes(q)) {
-      destRunning = true;
-      startDestPoll();
-    }
-  }
-}
-
-function startDestPoll() {
-  destPollGen++;
-  const gen = destPollGen;
-  const baseDate = (destState && destState.lastDate) || 0;
-  let n = 0;
-  let lastLine = "";
-  let sawActive = false;
-
-  const tick = async () => {
-    if (gen !== destPollGen) return;
-    n++;
-    await refreshDest();
-    if (gen !== destPollGen) return;
-    const s = destState || {};
-    const q = (s.syncQueue || "").toUpperCase();
-    const line = [s.syncQueue, s.syncStatus, s.syncUpdate].filter(Boolean).join(" · ");
-    const failed = q === "FAILED" || q === "ERROR";
-    if (line && line !== lastLine) {
-      lastLine = line;
-      logLine($("destLog"), "状态：" + line, failed || (q === "COMPLETED" && !s.syncOk) ? "bad" : "ok");
-    }
-    if (["RUNNING", "PENDING", "QUEUED", "STARTED", "PROCESSING"].includes(q)) sawActive = true;
-    const finished = /COMPLETE/i.test(q + " " + (s.syncStatus || ""))
-      && ((s.lastDate || 0) > baseDate || sawActive);
-    if (finished || failed || n >= 30) {
-      destPollGen++;
-      destRunning = false;
-      renderDest();
-      if (finished) logLine($("destLog"), s.syncOk ? "同步完成" : "这次同步没成功", s.syncOk ? "ok" : "bad");
-      else if (failed) logLine($("destLog"), "这次同步没成功", "bad");
-      else logLine($("destLog"), "还没看到完成结果，过一会儿点「刷新状态」再看", "warn");
-      return;
-    }
-    setTimeout(tick, 6000);
-  };
-  setTimeout(tick, 2000);
-}
-
-$("destBtn").addEventListener("click", async () => {
-  if (destBusy) return;
-  const btn = $("destBtn");
-  const action = btn.dataset.action || "sync";
-  const log = $("destLog");
-
-  if (action === "gotoFs") {
-    const tabBtn = document.querySelector('.tab[data-pane="two"]');
-    if (tabBtn) tabBtn.click();
-    chip($("fsChip"), "先完成这一步", "warn");
-    return;
-  }
-  if (action === "refresh") {
-    await refreshDest();
-    return;
-  }
-
-  destBusy = true;
-  destRunning = true;
-  btn.disabled = true;
-  chip($("destChip"), "提交中…", "warn");
-  setDestBar("QUEUED", null);
-  try {
-    const r = await call("destSync");
-    destRanThisSession = true;
-    logLine(log, r.message || "已提交", "ok");
-    await refreshDest();
-    startDestPoll();
-  } catch (e) {
-    destRunning = false;
-    chip($("destChip"), e.message || "提交失败", "bad");
-    logLine(log, e.message || "提交失败", "bad");
+    chip(chipEl, e.message || "导入失败", "bad");
+    logLine($("importLog"), e.message || "导入失败", "bad");
+    noteEl.textContent = "";
   } finally {
-    destBusy = false;
-    renderDest();
+    onEvent.import = null;
+    btn.disabled = false;
   }
 });
 
-$("destAuthBtn").addEventListener("click", async () => {
-  if (destBusy) return;
-  if (!(state.fs && state.fs.connected)) {
-    const tabBtn = document.querySelector('.tab[data-pane="two"]');
-    if (tabBtn) tabBtn.click();
-    chip($("fsChip"), "先完成这一步", "warn");
-    return;
-  }
-  const authBtn = $("destAuthBtn");
-  const log = $("destLog");
-  destBusy = true;
-  authBtn.disabled = true;
-  $("destBtn").disabled = true;
-  chip($("destChip"), "打开授权…", "warn");
-  logLine(log, "在弹出的窗口里用颂拓国际账号登录并同意；还没有账号就在窗口里注册一个。窗口会自己关。");
+$("openFinderBtn").addEventListener("click", async () => {
+  if (!exportFolder) { chip($("importChip"), "先在「下载记录」里选文件夹", "warn"); return; }
   try {
-    const r = await call("destPrepare", { force: true });
-    logLine(log, r.message || "颂拓国际已连上", "ok");
-    await refreshDest();
+    await call("openExportFolder", { folder: exportFolder });
   } catch (e) {
-    chip($("destChip"), e.message || "没登录成", e.needFs ? "warn" : "bad");
-    logLine(log, e.message || "没登录成", e.needFs ? "warn" : "bad");
-  } finally {
-    destBusy = false;
-    renderDest();
+    chip($("importChip"), e.message || "打不开文件夹", "bad");
   }
 });
 

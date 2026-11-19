@@ -2,3 +2,7 @@
 build/
 *.dmg
 SuuntoBridge/Resources/bin/
+SuuntoBridgeWin/node_modules/
+SuuntoBridgeWin/dist/
+SuuntoBridgeWin/bin/
+SuuntoBridgeWin/extras/

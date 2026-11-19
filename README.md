@@ -1,108 +1,97 @@
 # 颂拓记录搬家 · Suunto Bridge
 
-把 **颂拓中国区账号** 里的运动记录，搬到你的 **颂拓国际区账号**。Mac 桌面程序，界面和授权都在本机完成，颂拓密码只交给颂拓服务器。
+把 **颂拓中国区账号** 里的运动记录，搬到你的 **颂拓国际区账号**。Mac 和 Windows 桌面程序，两步做完：先从中国区把原始 `.fit` 下载下来，再在程序里登一次国际区账号，自动全部送进去。
 
-> Move your Suunto China activities to your Suunto international account via your own FitnessSyncer account. macOS app, local-first.
+> Move your Suunto China activities to your Suunto international account. macOS + Windows, local-first.
 
 ## 它做什么
 
-颂拓中国区（`api.suunto.cn`）和国际区（`api.sports-tracker.com`）是两套互不相通的账号，官方没有迁移入口，App 里只能一条一条导出。这个程序把三段流程做成三个选项卡：
+颂拓中国区（`api.suunto.cn`）和国际区（`api.sports-tracker.com`）是两套互不相通的账号，官方没有迁移入口，App 里只能一条一条导出。这个程序把这件事做成两个选项卡：
 
 | 选项卡 | 做什么 |
 | --- | --- |
 | ① 下载记录 | 登录中国区账号，按「全部」或「指定时间段」把每条活动的原始 `.fit` 存到你的文件夹，并生成「导出清单.csv」 |
-| ② 上传到 FitnessSyncer | 点一次「登录并授权」（程序内置公共 OAuth 客户端，**不用注册开发者应用、不用填 ID 或密钥**），把文件夹里的 `.fit` 全部传进 FitnessSyncer 的 Notebook |
-| ③ 传到颂拓国际 | 在 FitnessSyncer 里建好到颂拓国际的接收方，触发同步，由 FitnessSyncer 把记录送进你的国际区账号 |
+| ② 导入颂拓国际 | 点「开始导入」，弹出的窗口里登一次国际区账号；登录状态会记住，登录好程序自动把文件夹里的 `.fit` 打包上传，进度和「成功 N 条 / 失败 M 条」都显示在主窗口 |
 
-第四个选项卡是给第一次用的人看的使用说明。
+第三个选项卡是给第一次用的人看的使用说明。
 
-中途停止、关掉程序都没关系：已下好的文件会跳过，已传过的文件名记在文件夹里的「已上传.txt」。
+中途停止、关掉程序都没关系：已下好的文件会跳过，下次接着下。
 
-## 为什么需要绕这一圈
+## 为什么是「下载 + 官方导入页」
 
-导出是读接口，登录就能做；写进颂拓要合作方资格，自己拼请求进不去。FitnessSyncer 是颂拓官方合作方之一，能代你把活动写进国际区账号，所以中间借它中转一次。
+导出是读接口，登录就能做；写进颂拓要合作方资格，自己拼请求进不去。
+
+颂拓自己有一个导入页 [`fit.suunto.com`](https://fit.suunto.com)，登录后支持**单个 FIT** 和 **ZIP 批量**导入，记录会作为「自己的活动」进到账号里，**GPS 轨迹和逐点心率曲线都在**。本程序把这一步做进去了：登录窗口就是颂拓官方网页，文件由程序自动提交，不用你拖、不用你点。
+
+> 早前的版本中转过一次 FitnessSyncer。它存着逐点心率，但往颂拓只送摘要（平均值），曲线会丢；所以这条路已经废弃。
 
 ## 下载安装
 
-到 [Releases](../../releases) 下载最新的 `.dmg`，打开后把「颂拓记录搬家」拖进「应用程序」。
+到 [Releases](../../releases) 下载最新版：
 
-- 需要 **macOS 13 或更高**，目前发布的是 **Apple 芯片（M1 及以后）** 版本。
-- 没有做 Apple 开发者签名和公证，**第一次打开要右键点图标 →「打开」→ 再点一次「打开」**。直接双击会被系统拦住。
+| 平台 | 文件 | 说明 |
+| --- | --- | --- |
+| macOS | `颂拓记录搬家-1.2.2.dmg` | 需要 macOS 13+，**Apple 芯片（M1 及以后）** |
+| Windows | `SuuntoBridge-win64-v1.2.2.zip` | Windows 10/11 64 位，解压后运行 `SuuntoBridge.exe`（免安装） |
+
+Mac 版没有做 Apple 开发者签名和公证，**第一次打开要右键点图标 →「打开」→ 再点一次「打开」**。直接双击会被系统拦住。
 
 ## 界面与操作
-
-四张图就是程序里的四个选项卡。
 
 ### ① 下载记录
 
 ![下载记录](docs/screenshots/01-download.png)
 
 1. 填中国区颂拓的**注册邮箱**和密码，点「登录」（手机号登不进去）
-2. 点「选择文件夹」，挑一个存放记录的位置，可以直接用默认的 `~/Downloads/颂拓导出`
+2. 点「选择文件夹」，挑一个存放记录的位置
 3. 范围一般选「全部记录」；只想搬某一段，就选「指定时间段」，点日期框在日历里选
-4. 点「查询记录」，先看到「找到 N 条」，按钮变成「开始下载」，再点一下
+4. 点「**查询记录**」，先看到「找到 N 条」，按钮变成「**开始下载**」再点一下
+5. 结束后文件夹里是这个活动的 `.fit` 文件和一份「导出清单.csv」
 
-### ② 上传到 FitnessSyncer
+### ② 导入颂拓国际
 
-![上传到 FitnessSyncer](docs/screenshots/02-fitnesssyncer.png)
+![导入颂拓国际](docs/screenshots/02-import.png)
 
-1. 点「登录并授权」，在弹出的窗口里登录**你自己的 FitnessSyncer 账号**并点同意；没有账号就在同一个窗口里免费注册。窗口会自己关，**不用填任何东西**
-2. 点「换文件夹」选第一步那个文件夹，确认下面显示的条数
-3. 点「开始上传」
+1. 点「**开始导入到颂拓国际**」，弹出一个颂拓官方窗口
+2. 在窗口里用**颂拓国际区账号**登录一次（邮箱 + 密码），登录状态会记住，下次不用再登
+3. 登录好自动开始：打包 → 上传，主窗口进度条下面会一路显示「正在打包 / 上传中 42% / 成功 256 条 · 失败 0 条」
+4. 完成后到颂拓国际 App 或网页里看一眼曲线和地图在不在
 
-### ③ 传到颂拓国际
+### ③ 使用说明
 
-![传到颂拓国际](docs/screenshots/03-suunto-intl.png)
-
-1. 第一次先点「**登录颂拓国际**」，在弹窗里登国际区账号并同意；没有账号，就在同一个窗口里注册再登
-2. 登录完成后，程序会在 FitnessSyncer 里自动建好接收方；蓝色按钮变成「**上传颂拓国际**」
-3. 点它，状态变成绿色的「同步完成」就好了；关掉窗口也不影响，FitnessSyncer 的服务器会继续把记录送完
-
-### ④ 使用说明
-
-![使用说明](docs/screenshots/04-guide.png)
+![使用说明](docs/screenshots/03-guide.png)
 
 程序里的「使用说明」选项卡，和上面的步骤是同一套内容。
 
 ## 用之前准备好
 
 - 中国区颂拓账号的**注册邮箱**和密码（手机号登不进去）
-- **FitnessSyncer 免费账号**（授权过期时点一下「重新授权」即可，不用重新注册应用）
-- 颂拓国际区账号；没有也不要紧，第三选项卡的窗口里可以注册
+- 颂拓国际区账号；没有的话，导入窗口里可以注册
 - 一个用来放记录的**文件夹**，自己选，空文件夹也可以
-
-### FitnessSyncer 授权，为什么不用填任何东西
-
-程序内置了一个 FitnessSyncer **公共 OAuth 客户端**：公开类型、没有客户端密钥、按规范强制使用 PKCE。点「登录并授权」后，浏览器把授权结果带回本机，程序再用一次性的校验码换回令牌。令牌属于**在弹窗里登录的那个人**，记录进的是那个人的 FitnessSyncer 账号。
-
-公共客户端 ID 出现在源码里是它本来的设计，它只代表「是哪个程序在请求」，不含任何密钥，也动不了任何人的账号——除非账号主人本人在授权窗口里点了同意。
-
-> 反过来，**「个人应用程序」的客户端密钥千万不要提交到仓库或发给别人**：密钥泄露收不回，别人拿它做的事也算在凭据主人名下。本项目不需要你创建个人应用。
 
 ## 凭据放在哪
 
 程序里不含任何人的私人凭据，也不上传到别处。全部只在这台电脑上：
 
-| 内容 | 位置 |
-| --- | --- |
-| 中国区会话 | `~/Library/Application Support/SuuntoBridge/session-cn.json` |
-| 中国区账号信息 | `~/.config/suuntool/cn.json`（由 suuntool 维护） |
-| FitnessSyncer 授权令牌（含内置公共客户端 ID） | `~/Library/Application Support/SuuntoBridge/fs-oauth.json`（权限 0600） |
-| 已上传台账 | 你选的记录文件夹里的「已上传.txt」 |
+| 内容 | 位置（macOS） | 位置（Windows） |
+| --- | --- | --- |
+| 中国区会话 | `~/Library/Application Support/SuuntoBridge/session-cn.json` | `%APPDATA%\SuuntoBridge\` |
+| 中国区账号信息 | `~/.config/suuntool/cn.json`（由 suuntool 维护） | `%USERPROFILE%\.config\suuntool\cn.json` |
+| 国际区登录状态 | 程序内嵌网页的站点存储（只在导入窗口里） | 同左 |
 
-颂拓密码只交给颂拓服务器，程序不留存；程序里没有需要你保管的 FitnessSyncer 密钥，授权令牌只在这台电脑上。
+- 颂拓密码只交给颂拓服务器（中国区由 suuntool 登录，国际区在颂拓官方页面上输入），**程序不留存**。
+- 导入走的是颂拓官方网页，用的是你在那个窗口里登录后拿到的会话凭据，只存在本机的程序数据里。
 
 ## 已知限制
 
-- **同步只送「上次同步之后」的新活动。** FitnessSyncer 记的是时间水位线，不是逐条账本：补传一条更旧日期的活动，不会被再送到颂拓国际，先点同步再补传也会漏。第一次搬家因为还没同步过，所以历史记录能全过。
-- **日期范围只能在 FitnessSyncer 网站的目的地 Filters 里设**，接口不支持，程序里不放假的日期框。
-- **不核对目的地已有条目**，手表直传国际区的同一条记录可能与同步过来的并存；重复了在颂拓 App 里看条数。
-- 上传不去重：同一文件传两次就是两条，多出来的在 FitnessSyncer 网站里删。
-- 中间要重新编码两次（FIT → FitnessSyncer 条目 → 颂拓），**不会逐字节一致**。
-- **会过去**：GPS 轨迹、逐点心率和速度/海拔/步频/功率/温度、每圈数据、总距离/时长/爬升下降/卡路里/平均最大心率、运动类型、开始时间。
-- **会丢**：步数、TSS、训练负荷、EPOC、恢复时间、主观感觉等颂拓自算衍生值，SuuntoPlus 自定义字段，装备绑定，长备注。
+- **不认重**：颂拓不会自动去重，同一条记录导两次就会出现两条。导入前先看一眼文件夹里的条数，导完核对一下。
+- 之前已经通过别的办法（比如 FitnessSyncer）进过颂拓的那批，再导一遍会重复，需要先在颂拓里把旧的删掉。
+- 一次批量导入的文件不超过 **200 MB**（颂拓导入页的上限）；只带 GPS/心率/圈/功率/步频/海拔/温度/距离这些记录本身。
+- 导入走的是颂拓网页背后的接口，属于非公开契约，**颂拓改版可能会失效**；失效时程序会把颂拓的原话显示出来。
 
 ## 从源码构建
+
+### macOS
 
 要求：macOS 13+、Xcode Command Line Tools（`xcode-select --install`）、底层工具 [suuntool](https://github.com/tajchert/suuntool)。
 
@@ -125,13 +114,28 @@ mkdir -p /tmp/dmg && cp -R build/颂拓记录搬家.app /tmp/dmg/ && ln -s /Appl
 hdiutil create -volname 颂拓记录搬家 -srcfolder /tmp/dmg -fs HFS+ -format UDZO 颂拓记录搬家.dmg
 ```
 
+### Windows
+
+要求：Node.js 20+，以及 Windows 版的 `suuntool.exe`（取法同上，放到 `SuuntoBridgeWin/bin/`）。
+
+```sh
+cd SuuntoBridgeWin
+npm install
+npx @electron/packager . SuuntoBridge --platform=win32 --arch=x64 --icon=icon.ico --out=dist --asar \
+  --ignore="^/(node_modules|bin|extras|dist)"
+mkdir -p dist/SuuntoBridge-win32-x64/resources/bin
+cp bin/suuntool.exe dist/SuuntoBridge-win32-x64/resources/bin/
+cp icon.ico dist/SuuntoBridge-win32-x64/resources/
+```
+
 ## 常见问题
 
 - **登录说密码不对**：要用注册邮箱，手机号不行；忘了密码去颂拓网站找回。
-- **还需要自己去建 FitnessSyncer 应用、填 ID 和密钥吗？** 不需要，点「登录并授权」就行。
-- **第二步报 401 / 403**：FitnessSyncer 授权过期，回第二个选项卡重新点「登录并授权」。
-- **第三步一直排队**：服务器在排队，等几分钟；按钮变成「重新检查」时点一下重读。
-- **传重复了**：同一场活动两条，在 FitnessSyncer 网站删掉多余那条。
+- **点了「开始导入」没动静**：会弹出一个颂拓窗口，先在里登录；登录成功程序会自己往下走。
+- **卡在「等你登录」**：在窗口里登录成功后，回到主窗口再点一次「开始导入」。
+- **报「颂拓没认这批文件」**：把日志里那行原话保留下来，多半是颂拓改接口了或文件超了 200 MB。
+- **报「登录过期了」**：在导入窗口里重新登录，再点一次。
+- **导重复了**：在颂拓 App 或网页里把多余的那条删掉；颂拓没有批量去重。
 
 ## 致谢
 
@@ -141,10 +145,11 @@ hdiutil create -volname 颂拓记录搬家 -srcfolder /tmp/dmg -fs HFS+ -format 
 
 以及：
 
-- [FitnessSyncer 开发者文档](https://www.fitnesssyncer.com/developers)，OAuth2 授权与数据接口的规则均按其文档实现
-- 界面、图标与说明页为本项目自制，界面字体使用系统自带的苹方 / Hiragino Sans GB 渲染
+- 导入使用颂拓官方导入页 [`fit.suunto.com`](https://fit.suunto.com)，接口行为按其网页实现
+- Windows 版基于 [Electron](https://www.electronjs.org/)（MIT）
+- 界面、图标与说明页为本项目自制，界面字体使用系统自带的中文字体渲染
 
-本项目与 Suunto、FitnessSyncer 没有任何隶属或背书关系，相关名称和商标归各自所有者。
+本项目与 Suunto 没有任何隶属或背书关系，相关名称和商标归各自所有者。
 
 ## 许可证
 

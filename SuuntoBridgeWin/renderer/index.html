@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>颂拓记录搬家</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="head">
+    <div class="brand">
+      <div class="logo">颂</div>
+      <div class="brand-text">
+        <h1>颂拓记录搬家</h1>
+        <p>把中国区的运动记录导出，再导进颂拓国际区</p>
+      </div>
+    </div>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-pane="one">下载记录</button>
+      <button class="tab" data-pane="two">导入颂拓国际</button>
+      <button class="tab" data-pane="three">使用说明</button>
+      <span class="tab-glow" id="tabGlow"></span>
+    </div>
+  </header>
+
+  <!-- 模块一 -->
+  <section class="pane active" id="pane-one">
+
+    <div class="card">
+      <div class="card-head">
+        <h2>颂拓账号</h2>
+        <span class="chip" id="cnChip">未登录</span>
+      </div>
+      <div class="grid2">
+        <label class="field">
+          <span>邮箱</span>
+          <input id="email" type="email" autocomplete="username" placeholder="你在颂拓注册的邮箱">
+        </label>
+        <label class="field">
+          <span>密码</span>
+          <input id="password" type="password" autocomplete="current-password" placeholder="只在本地使用，不保存">
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="loginBtn">登录</button>
+        <span class="hint" id="loginHint">密码直接交给颂拓服务器，程序不留存。</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>导出记录</h2>
+        <span class="chip quiet" id="exportChip">待开始</span>
+      </div>
+      <div class="scope-row">
+        <div class="seg" id="scopeSeg">
+          <button class="seg-item active" data-scope="all">全部记录</button>
+          <button class="seg-item" data-scope="range">指定时间段</button>
+        </div>
+        <div class="range-row hidden" id="rangeRow">
+          <input type="text" id="dateFrom" class="date-field" readonly placeholder="开始日期" aria-label="起始日期">
+          <span class="to">至</span>
+          <input type="text" id="dateTo" class="date-field" readonly placeholder="结束日期" aria-label="结束日期">
+        </div>
+      </div>
+      <div class="folder-row">
+        <div class="folder-path" id="exportFolder">—</div>
+        <button class="btn ghost" id="pickBtn">选择文件夹</button>
+      </div>
+      <div class="row">
+        <button class="btn primary big" id="exportBtn">查询记录</button>
+        <button class="btn ghost hidden" id="stopExportBtn">停止</button>
+        <div class="progress-wrap">
+          <div class="progress"><div class="bar" id="exportBar"></div></div>
+          <div class="progress-label"><span id="exportCount">0 / 0</span><span id="exportNote"></span></div>
+        </div>
+      </div>
+      <div class="tally" id="exportTally">选好范围后先查一下有多少条</div>
+      <div class="log" id="exportLog"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>会导出什么</h2>
+      </div>
+      <div class="pills">
+        <span>GPS 轨迹</span><span>心率</span><span>圈</span><span>功率</span>
+        <span>步频</span><span>海拔</span><span>温度</span><span>距离</span>
+      </div>
+      <p class="hint">每条记录导出颂拓服务器上的原始 .fit 文件，并生成一份「导出清单.csv」。中途关掉再开，已下好的会跳过。</p>
+    </div>
+
+  </section>
+
+  <!-- 模块二 -->
+  <section class="pane" id="pane-two">
+
+    <div class="card">
+      <div class="card-head">
+        <h2>导入到颂拓国际区</h2>
+        <span class="chip quiet" id="importChip">待开始</span>
+      </div>
+      <div class="folder-row">
+        <div class="folder-path" id="importFolder">—</div>
+        <button class="btn ghost" id="openFinderBtn">在 Finder 中打开</button>
+      </div>
+      <div class="row">
+        <button class="btn primary big" id="startImportBtn">开始导入到颂拓国际</button>
+      </div>
+      <div class="row">
+        <div class="progress-wrap">
+          <div class="progress"><div class="bar" id="importBar"></div></div>
+          <div class="progress-label"><span id="importCount">0 / 0</span><span id="importNote"></span></div>
+        </div>
+      </div>
+      <div class="tally" id="importTally">还没开始</div>
+      <div class="log" id="importLog"></div>
+      <p class="hint" id="importHint">点「开始导入」会弹出颂拓的登录窗口：第一次用在这里登一次颂拓国际区账号（邮箱+密码，登录状态会记住），登录好程序会自动把文件夹里的 .fit 打包送进去，不用再点别处。心率、GPS、圈都会一起带过去。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>要注意的</h2>
+      </div>
+      <ul class="g-list">
+        <li>颂拓不会自动帮你认重，<b>同一条记录导两次会出现两条</b>。导之前先看一眼文件夹里的条数，导完核对一下</li>
+        <li>之前已经通过别的办法（比如 FitnessSyncer）进过颂拓的那些，再导一遍会重复，需要在颂拓里把旧的删掉</li>
+        <li>导入页是颂拓官方的网页，登录状态只保存在这台电脑上；密码只在颂拓的页面上输，不经过这个程序</li>
+      </ul>
+    </div>
+
+  </section>
+
+  <!-- 模块三：使用说明 -->
+  <section class="pane" id="pane-three">
+
+    <div class="card">
+      <div class="card-head">
+        <h2>两步，把记录搬到国际区</h2>
+      </div>
+      <div class="g-flow">
+        <div class="g-node"><b>① 下载记录</b><span>从中国区颂拓，把每条活动的原始文件存到你的文件夹</span></div>
+        <span class="g-arrow">→</span>
+        <div class="g-node"><b>② 导入颂拓国际</b><span>程序里登一次颂拓国际区账号，之后自动把文件全送进去</span></div>
+      </div>
+      <p class="hint">两个选项卡就是这两步，按顺序做。第一次用大约十几分钟，之后每次只要点两下。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>开始前要准备好的</h2>
+      </div>
+      <ul class="g-list">
+        <li><b>中国区颂拓账号</b>的注册邮箱和密码（这个程序只从中国区取记录）</li>
+        <li><b>颂拓国际区账号</b>的注册邮箱和密码；没有的话，导入页里可以注册</li>
+        <li>一个用来放记录的<b>文件夹</b>，自己选，空文件夹也可以</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2><span class="g-num">1</span>下载记录</h2>
+        <span class="chip quiet">第一个选项卡</span>
+      </div>
+      <div class="g-step">
+        <ol class="g-list">
+          <li>填中国区颂拓的<b>邮箱</b>和<b>密码</b>，点「登录」。要填注册邮箱，手机号不行</li>
+          <li>点「选择文件夹」，挑一个存放记录的位置</li>
+          <li>范围一般选<b>全部记录</b>；只想搬某一段，就选「指定时间段」，点日期框在日历里选</li>
+          <li>点<b>「查询记录」</b>，先看到「找到 N 条」，按钮才变成「开始下载」</li>
+          <li>再点一下「开始下载」，等进度条走完</li>
+          <li>结束后文件夹里是这个活动的 .fit 文件和一份「导出清单.csv」</li>
+        </ol>
+        <svg class="g-art" viewBox="0 0 240 132" role="img" aria-label="下载记录示意">
+          <rect x="8" y="8" width="224" height="116" rx="14" fill="var(--field)" stroke="var(--field-line)"/>
+          <text x="24" y="30" font-size="10" fill="var(--ink-2)">邮箱</text>
+          <rect x="24" y="36" width="192" height="16" rx="8" fill="var(--surface)" stroke="var(--field-line)"/>
+          <text x="24" y="66" font-size="10" fill="var(--ink-2)">密码</text>
+          <rect x="24" y="72" width="192" height="16" rx="8" fill="var(--surface)" stroke="var(--field-line)"/>
+          <rect x="24" y="98" width="72" height="18" rx="9" fill="var(--accent)"/>
+          <text x="60" y="110.5" font-size="9.5" fill="#fff" text-anchor="middle">查询记录</text>
+          <rect x="108" y="106" width="108" height="6" rx="3" fill="var(--field-line)"/>
+          <rect x="108" y="106" width="64" height="6" rx="3" fill="var(--accent-2)"/>
+        </svg>
+      </div>
+      <div class="g-tip">中途停止或者关掉窗口都没关系：已经下好的会被跳过，下次点「开始下载」接着下。</div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2><span class="g-num">2</span>导入颂拓国际</h2>
+        <span class="chip quiet">第二个选项卡</span>
+      </div>
+      <div class="g-step">
+        <ol class="g-list">
+          <li>到第二个选项卡，点<b>「开始导入到颂拓国际」</b>，会弹出一个登录窗口</li>
+          <li>在窗口里用<b>颂拓国际区账号</b>登录一次，登录状态会记住，下次不用再登</li>
+          <li>登录好就自动开始上传，主窗口里能看进度；不用拖文件、不用点页面上的东西</li>
+          <li>等进度条走完，到颂拓国际 App 或网页里看一眼曲线和地图在不在</li>
+        </ol>
+        <svg class="g-art" viewBox="0 0 240 132" role="img" aria-label="导入颂拓国际示意">
+          <rect x="8" y="8" width="224" height="116" rx="14" fill="var(--field)" stroke="var(--field-line)"/>
+          <rect x="24" y="24" width="88" height="18" rx="9" fill="none" stroke="var(--field-line)"/>
+          <text x="68" y="36.5" font-size="9" fill="var(--ink-2)" text-anchor="middle">登录颂拓国际</text>
+          <rect x="24" y="56" width="108" height="20" rx="10" fill="var(--accent)"/>
+          <text x="78" y="69.5" font-size="9.5" fill="#fff" text-anchor="middle">自动上传</text>
+          <rect x="24" y="88" width="140" height="6" rx="3" fill="var(--field-line)"/>
+          <rect x="24" y="88" width="140" height="6" rx="3" fill="var(--ok)"/>
+          <circle cx="196" cy="91" r="9" fill="var(--ok)"/>
+          <path d="M192 91.5 l3 3 l5.5 -6" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <text x="24" y="112" font-size="9.5" fill="var(--ok)">导入完成，曲线齐全</text>
+        </svg>
+      </div>
+      <div class="g-tip"><b>要注意：</b>颂拓不会自动认重，同一条记录导两次会变成两条。之前已经通过 FitnessSyncer 进过颂拓的那批，要先去颂拓里删掉，否则会重复。</div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>常见问题</h2>
+      </div>
+      <ul class="g-list g-faq">
+        <li><b>登录说密码不对？</b>要用注册时的邮箱，手机号登不进去；忘了密码去颂拓网站找回。</li>
+        <li><b>点了开始导入没动静？</b>会弹出一个颂拓的登录窗口，先在窗口里登录；登录好它会自己往下走。</li>
+        <li><b>卡在「等你登录」怎么办？</b>窗口登录成功后再点一次「开始导入到颂拓国际」就行。</li>
+        <li><b>之前用 FitnessSyncer 进去的那些怎么办？</b>先在颂拓里删掉那一批，再统一从这里导。</li>
+        <li><b>我的密码安全吗？</b>密码只在颂拓的页面上输，不经过这个程序；登录状态只保存在这台电脑上。</li>
+      </ul>
+    </div>
+
+  </section>
+
+  <footer class="foot">所有操作都在这台电脑上完成 · 密码不出本机</footer>
+</div>
+
+<div class="cal hidden" id="cal">
+  <div class="cal-head">
+    <button class="cal-nav" id="calPrevY" aria-label="上一年">«</button>
+    <button class="cal-nav" id="calPrevM" aria-label="上个月">‹</button>
+    <span class="cal-title" id="calTitle"></span>
+    <button class="cal-nav" id="calNextM" aria-label="下个月">›</button>
+    <button class="cal-nav" id="calNextY" aria-label="下一年">»</button>
+  </div>
+  <div class="cal-week"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+  <div class="cal-grid" id="calGrid"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

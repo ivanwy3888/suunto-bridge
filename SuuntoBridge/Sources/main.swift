@@ -1020,6 +1020,275 @@ final class FsAuthWindow: NSObject, WKNavigationDelegate, NSWindowDelegate {
     }
 }
 
+// MARK: - 颂拓导入窗口
+
+final class SuuntoImportWindow: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
+    private var window: NSWindow!
+    private var web: WKWebView!
+    private var hint: NSTextField!
+    private var popups: [ObjectIdentifier: (NSWindow, WKWebView)] = [:]
+
+    private let homeURL = URL(string: "https://fit.suunto.com/")!
+
+    func show() {
+        if window == nil { build() }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func reloadTapped() {
+        web.load(URLRequest(url: homeURL))
+    }
+
+    @objc private func closeTapped() {
+        window?.close()
+    }
+
+    private func build() {
+        let rect = NSRect(x: 0, y: 0, width: 1000, height: 860)
+        let w = NSWindow(contentRect: rect,
+                         styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                         backing: .buffered, defer: false)
+        w.title = "颂拓国际 · 导入运动记录"
+        w.minSize = NSSize(width: 780, height: 620)
+        w.isReleasedWhenClosed = false
+        w.delegate = self
+
+        let container = NSView(frame: rect)
+        container.autoresizingMask = [.width, .height]
+
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
+
+        web = WKWebView(frame: NSRect(x: 0, y: 46, width: rect.width, height: rect.height - 46),
+                        configuration: config)
+        web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15"
+        web.navigationDelegate = self
+        web.uiDelegate = self
+        web.autoresizingMask = [.width, .height]
+        container.addSubview(web)
+
+        let bar = NSView(frame: NSRect(x: 0, y: 0, width: rect.width, height: 46))
+        bar.autoresizingMask = [.width, .maxYMargin]
+        let line = NSBox(frame: NSRect(x: 0, y: 45, width: rect.width, height: 1))
+        line.boxType = .separator
+        line.autoresizingMask = [.width, .minYMargin]
+        bar.addSubview(line)
+
+        hint = NSTextField(labelWithString: "第一次用在这里登录颂拓国际；登录好就回到主窗口点「开始导入」，文件会自动送进去")
+        hint.frame = NSRect(x: 16, y: 13, width: rect.width - 260, height: 20)
+        hint.font = .systemFont(ofSize: 11.5)
+        hint.textColor = .secondaryLabelColor
+        hint.lineBreakMode = .byTruncatingTail
+        hint.autoresizingMask = [.width]
+        bar.addSubview(hint)
+
+        let reload = NSButton(title: "回到导入页", target: self, action: #selector(reloadTapped))
+        reload.bezelStyle = .rounded
+        reload.frame = NSRect(x: rect.width - 216, y: 9, width: 104, height: 28)
+        reload.autoresizingMask = [.minXMargin, .maxYMargin]
+        bar.addSubview(reload)
+
+        let close = NSButton(title: "关闭", target: self, action: #selector(closeTapped))
+        close.bezelStyle = .rounded
+        close.keyEquivalent = "\u{1b}"
+        close.frame = NSRect(x: rect.width - 104, y: 9, width: 88, height: 28)
+        close.autoresizingMask = [.minXMargin, .maxYMargin]
+        bar.addSubview(close)
+
+        container.addSubview(bar)
+        w.contentView = container
+        window = w
+        web.load(URLRequest(url: homeURL))
+    }
+
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction,
+                 windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard let url = navigationAction.request.url else { return nil }
+        let pv = WKWebView(frame: NSRect(x: 0, y: 0, width: 560, height: 720),
+                           configuration: configuration)
+        pv.customUserAgent = web.customUserAgent
+        pv.navigationDelegate = self
+        pv.uiDelegate = self
+        let pw = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 720),
+                          styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        pw.title = "颂拓"
+        pw.isReleasedWhenClosed = false
+        pw.contentView = pv
+        popups[ObjectIdentifier(pv)] = (pw, pv)
+        pv.load(URLRequest(url: url))
+        pw.center()
+        pw.makeKeyAndOrderFront(nil)
+        return pv
+    }
+
+    private var tokenGen = 0
+
+    func waitForToken(timeout: TimeInterval, completion: @escaping (String?) -> Void) {
+        tokenGen += 1
+        let gen = tokenGen
+        let deadline = Date().addingTimeInterval(timeout)
+        func poll() {
+            guard gen == tokenGen else { return }
+            guard let w = web else { completion(nil); return }
+            guard Date() < deadline else { completion(nil); return }
+            w.evaluateJavaScript("sessionStorage.getItem('WEB_TOKEN')||''") { v, _ in
+                guard gen == self.tokenGen else { return }
+                let t = (v as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { completion(t); return }
+                if Date() > deadline { completion(nil); return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { poll() }
+            }
+        }
+        poll()
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === web, let url = webView.url?.absoluteString else { return }
+        let line = "\(Date()) \(url)\n"
+        if let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let dir = dir.appendingPathComponent("SuuntoBridge", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? line.data(using: .utf8)?.write(to: dir.appendingPathComponent("import-loaded.txt"))
+        }
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        if let (pw, _) = popups.removeValue(forKey: ObjectIdentifier(webView)) { pw.close() }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let w = notification.object as? NSWindow, w === window else { return }
+        for (_, pair) in popups { pair.0.close() }
+        popups.removeAll()
+        window = nil
+        web = nil
+    }
+}
+
+// MARK: - 颂拓导入上传
+
+final class SuuntoUploader: NSObject, URLSessionTaskDelegate {
+    private var session: URLSession?
+    private var bodyURL: URL?
+    private var onProgress: ((Double) -> Void)?
+    private var onDone: (([String: Any]) -> Void)?
+
+    static func zipFits(folder: String) throws -> (url: URL, count: Int) {
+        let fm = FileManager.default
+        let names = try fm.contentsOfDirectory(atPath: folder)
+            .filter { $0.lowercased().hasSuffix(".fit") }
+            .sorted()
+        guard !names.isEmpty else {
+            throw NSError(domain: "SuuntoBridge", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "文件夹里没有 .fit 文件，先下载记录"])
+        }
+        let out = fm.temporaryDirectory.appendingPathComponent("SuuntoBridge-import-\(UUID().uuidString).zip")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        p.arguments = ["-j", "-q", "-X", out.path]
+            + names.map { (folder as NSString).appendingPathComponent($0) }
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        try p.run()
+        p.waitUntilExit()
+        guard p.terminationStatus == 0, fm.fileExists(atPath: out.path) else {
+            throw NSError(domain: "SuuntoBridge", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "打包失败，换个文件夹试试"])
+        }
+        return (out, names.count)
+    }
+
+    func upload(zip: URL, token: String,
+                onProgress: @escaping (Double) -> Void,
+                completion: @escaping ([String: Any]) -> Void) {
+        self.onProgress = onProgress
+        self.onDone = completion
+
+        guard let zipData = try? Data(contentsOf: zip) else {
+            completion(["ok": false, "message": "读不到打包好的文件"])
+            return
+        }
+
+        let boundary = "----SuuntoBridge\(UUID().uuidString)"
+        var body = Data()
+        func add(_ s: String) { body.append(Data(s.utf8)) }
+        add("--\(boundary)\r\n")
+        add("Content-Disposition: form-data; name=\"file\"; filename=\"suunto-import.zip\"\r\n")
+        add("Content-Type: application/zip\r\n\r\n")
+        body.append(zipData)
+        add("\r\n--\(boundary)--\r\n")
+
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("SuuntoBridge-body-\(UUID().uuidString).bin")
+        do { try body.write(to: tmp) } catch {
+            completion(["ok": false, "message": "准备上传内容失败"])
+            return
+        }
+        bodyURL = tmp
+
+        var req = URLRequest(url: URL(string: "https://api.sports-tracker.com/apiserver/management/user/import/fits")!)
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        req.setValue(token, forHTTPHeaderField: "STTAuthorization")
+
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 300
+        cfg.timeoutIntervalForResource = 3600
+        let s = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+        session = s
+        s.uploadTask(with: req, fromFile: tmp) { [weak self] data, resp, err in
+            guard let self = self else { return }
+            defer { self.cleanup() }
+            if let err = err {
+                self.onDone?(["ok": false, "message": "上传中断：\(err.localizedDescription)"])
+                return
+            }
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let text = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            if status == 401 || status == 403 {
+                self.onDone?(["ok": false, "message": "颂拓那边登录过期了，在窗口里重新登录再点一次"])
+                return
+            }
+            guard let data = data,
+                  let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                self.onDone?(["ok": false, "message": "颂拓没给结果（HTTP \(status)）：\(text.prefix(120))"])
+                return
+            }
+            // 颂拓把回执包在 {"data":{"true":N,"false":M}} 里
+            let inner = (obj["data"] as? [String: Any]) ?? obj
+            func count(_ v: Any?) -> Int {
+                if let n = v as? NSNumber { return n.intValue }
+                if let s = v as? String { return Int(s) ?? 0 }
+                return 0
+            }
+            let okCount = count(inner["true"])
+            let failCount = count(inner["false"])
+            if inner["true"] != nil || inner["false"] != nil {
+                self.onDone?(["ok": true, "success": okCount, "failed": failCount])
+            } else if let desc = (obj["error"] as? [String: Any])?["description"] as? String {
+                self.onDone?(["ok": false, "message": desc])
+            } else {
+                self.onDone?(["ok": false, "message": "颂拓没认这批文件（HTTP \(status)）：\(text.prefix(160))"])
+            }
+        }.resume()
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64,
+                    totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        onProgress?(Double(totalBytesSent) / Double(totalBytesExpectedToSend))
+    }
+
+    private func cleanup() {
+        session?.finishTasksAndInvalidate()
+        session = nil
+        if let u = bodyURL { try? FileManager.default.removeItem(at: u) }
+        bodyURL = nil
+    }
+}
+
 // MARK: - App
 
 final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate {
@@ -1028,6 +1297,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     let backend = Backend()
     let workQueue = DispatchQueue(label: "bridge.work", qos: .userInitiated)
     private var authWindow: FsAuthWindow?
+    private var suuntoWindow: SuuntoImportWindow?
+    private var uploader: SuuntoUploader?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let config = WKWebViewConfiguration()
@@ -1277,6 +1548,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 guard let self = self else { return }
                 let r = self.backend.destSync()
                 self.reply(id: id, ok: (r["ok"] as? Bool) ?? false, data: r)
+            }
+
+        case "openSuuntoImport":
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if self.suuntoWindow == nil { self.suuntoWindow = SuuntoImportWindow() }
+                self.suuntoWindow?.show()
+                self.reply(id: id, ok: true, data: [:])
+            }
+
+        case "openExportFolder":
+            let folder = payload["folder"] as? String ?? ""
+            if folder.isEmpty {
+                reply(id: id, ok: false, data: ["message": "还没选文件夹"])
+            } else {
+                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder)
+                reply(id: id, ok: true, data: [:])
+            }
+
+        case "suuntoImportStart":
+            let folder = payload["folder"] as? String ?? ""
+            guard !folder.isEmpty else {
+                reply(id: id, ok: false, data: ["message": "先在「下载记录」里选好文件夹"])
+                return
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if self.suuntoWindow == nil { self.suuntoWindow = SuuntoImportWindow() }
+                self.suuntoWindow?.show()
+                self.sendEvent(["type": "stage", "text": "在窗口里登录颂拓国际（邮箱+密码），登录好会自动开始"])
+                self.suuntoWindow?.waitForToken(timeout: 1800) { token in
+                    guard let token = token, !token.isEmpty else {
+                        self.reply(id: id, ok: false, data: ["message": "还没等到你登录，再点一次「开始导入」"])
+                        return
+                    }
+                    self.sendEvent(["type": "stage", "text": "已登录，正在打包文件…"])
+                    self.workQueue.async {
+                        do {
+                            let (zip, count) = try SuuntoUploader.zipFits(folder: folder)
+                            self.sendEvent(["type": "stage", "text": "\(count) 条已打包，开始上传…"])
+                            let up = SuuntoUploader()
+                            self.uploader = up
+                            up.upload(zip: zip, token: token, onProgress: { p in
+                                self.sendEvent(["type": "progress", "percent": Int(p * 100)])
+                            }, completion: { r in
+                                self.uploader = nil
+                                try? FileManager.default.removeItem(at: zip)
+                                self.reply(id: id, ok: (r["ok"] as? Bool) ?? false, data: r)
+                            })
+                        } catch {
+                            self.reply(id: id, ok: false, data: ["message": error.localizedDescription])
+                        }
+                    }
+                }
             }
 
         default:

@@ -1,0 +1,14 @@
+{
+  "name": "suunto-bridge",
+  "productName": "SuuntoBridge",
+  "version": "1.2.2",
+  "description": "颂拓记录搬家 Windows 版",
+  "main": "main.js",
+  "author": "ivanwy3888",
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "@electron/packager": "^18.3.6",
+    "electron": "^45.3.4"
+  }
+}
