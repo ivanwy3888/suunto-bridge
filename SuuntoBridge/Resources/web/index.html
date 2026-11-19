@@ -103,21 +103,11 @@
         <h2>连接 FitnessSyncer</h2>
         <span class="chip quiet" id="fsChip">未连接</span>
       </div>
-      <div id="secretRow">
-        <label class="field">
-          <span>客户端 ID</span>
-          <input id="clientId" type="text" class="mono" autocomplete="off" spellcheck="false" placeholder="开发者页面「客户端 ID」那一行">
-        </label>
-        <label class="field gap-top">
-          <span>客户端密钥</span>
-          <input id="secret" type="text" autocomplete="off" spellcheck="false" placeholder="粘贴客户端密钥">
-        </label>
-        <div class="row">
-          <button class="btn primary" id="authBtn">登录并授权</button>
-          <button class="btn ghost hidden" id="signOutBtn">断开</button>
-        </div>
+      <div class="row">
+        <button class="btn primary" id="authBtn">登录并授权</button>
+        <button class="btn ghost hidden" id="signOutBtn">断开</button>
       </div>
-      <p class="hint" id="fsHint">两串都来自你自己在 FitnessSyncer 开发者页面创建的那个「个人应用程序」：点「创建」后就能看到并复制，不需要点「旋转访问键」。它们和令牌都只存在这台电脑上。</p>
+      <p class="hint" id="fsHint">点「登录并授权」，在弹窗里登录你自己的 FitnessSyncer 账号并同意即可，不用填任何东西。授权只在本机完成，令牌只存在这台电脑上。</p>
     </div>
 
     <div class="card hidden" id="uploadCard">
@@ -194,7 +184,6 @@
       <ul class="g-list">
         <li><b>中国区颂拓账号</b>的注册邮箱和密码（这个程序只搬中国区的记录）</li>
         <li><b>FitnessSyncer 账号</b>，没有就免费注册一个</li>
-        <li>FitnessSyncer 里的<b>一对钥匙</b>：客户端 ID 和客户端密钥（第二步教你怎么拿）</li>
         <li><b>颂拓国际区账号</b>；没有也不要紧，第三步的窗口里可以直接注册</li>
         <li>一个用来放记录的<b>文件夹</b>，自己选，空文件夹也可以</li>
       </ul>
@@ -235,17 +224,11 @@
         <span class="chip quiet">第二个选项卡</span>
       </div>
       <ol class="g-list">
-        <li>用浏览器打开 FitnessSyncer 的<b>开发者页面</b>：<span class="g-url">https://www.fitnesssyncer.com/account/developer?lang=zh</span>　没登录会先让你登录，没有账号就在那里免费注册一个</li>
-        <li>在页面下面的「创建应用程序」里，类型保持<b>「个人应用程序」</b>，点<b>「创建」</b></li>
-        <li>创建完，上面表格会多出一行「个人应用程序」。点开这一行，就能看到<b>客户端 ID</b> 和<b>客户端密钥</b>，两串都复制下来。<b>第一次创建就有，不用点「旋转访问键」</b>；那个键是密钥丢了、或者想换一把新的的时候才点，点了旧的那把立刻作废</li>
-        <li>回到程序第二个选项卡，把两串分别粘进「客户端 ID」「客户端密钥」，直接点<b>「登录并授权」</b>——程序会先把这两串存下来，再打开授权窗口</li>
-        <li>点<b>「登录并授权」</b>，在弹窗里登录 FitnessSyncer 并同意，窗口会自己关</li>
+        <li>程序里已经内置好入口，你只需要<b>自己的 FitnessSyncer 账号</b>（没有就在授权窗口里免费注册一个）</li>
+        <li>到第二个选项卡，点<b>「登录并授权」</b>，在弹窗里登录 FitnessSyncer 并点同意，窗口会自己关；<b>不用填任何 ID 或密钥</b></li>
         <li>点「换文件夹」选第一步那个文件夹，确认下面的条数</li>
         <li>点<b>「开始上传」</b>，等进度条走完</li>
       </ol>
-      <div class="g-shot">
-        <img src="fs-developer.png" alt="FitnessSyncer 开发者页面：上面是应用程序列表，下面是「创建应用程序」">
-      </div>
       <div class="g-tip">传过的文件名会记在文件夹里的「<b>已上传.txt</b>」，再点只补没传的。这个文件别删，删了会重复上传。每条记录传完后，程序会自动清掉 FitnessSyncer 自动加上的那行文件名评论。</div>
     </div>
 

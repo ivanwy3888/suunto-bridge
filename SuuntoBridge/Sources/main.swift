@@ -1,5 +1,6 @@
 import Cocoa
 import WebKit
+import CryptoKit
 
 // MARK: - Paths
 
@@ -332,6 +333,7 @@ final class Backend {
 
     private let fsRedirectURI = "https://personal.fitnesssyncer.com/"
     private let fsScopes = "source_read source_data_activity_read notebook_activity_write destination_read destination_write"
+    private let fsPublicClientID = "0EFA66C9AABD4CC0909BCC142990E553"
 
     private var fsAuthFile: URL { supportDir.appendingPathComponent("fs-oauth.json") }
 
@@ -348,38 +350,48 @@ final class Backend {
         }
     }
 
-    private var fsActiveClientID: String {
-        (fsAuth["clientId"] as? String) ?? ""
-    }
+    private var fsActiveClientID: String { fsPublicClientID }
 
-    func fsAuthState() -> [String: Any] {
-        let a = fsAuth
-        let secret = (a["clientSecret"] as? String) ?? ""
-        let hasToken = !((a["refreshToken"] as? String) ?? "").isEmpty
-        return ["hasSecret": !secret.isEmpty,
-                "secretLength": secret.count,
-                "connected": !secret.isEmpty && hasToken,
-                "clientId": fsActiveClientID]
-    }
+    private var pkceVerifier: String?
+    private var didMigrateAuth = false
 
-    func fsSaveSecret(_ secret: String, clientId: String) -> [String: Any] {
-        let s = secret.trimmingCharacters(in: .whitespacesAndNewlines)
-        let c = clientId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !c.isEmpty else { return ["ok": false, "message": "客户端 ID 也要填（两串必须来自同一个应用）"] }
+    private func migrateAuthIfNeeded() {
+        guard !didMigrateAuth else { return }
+        didMigrateAuth = true
         var a = fsAuth
-        if s.isEmpty && ((a["clientSecret"] as? String) ?? "").isEmpty {
-            return ["ok": false, "message": "先粘贴客户端密钥"]
-        }
-        if (a["clientId"] as? String) != c {
+        if ((a["clientId"] as? String) ?? "") != fsPublicClientID {
             a.removeValue(forKey: "accessToken")
             a.removeValue(forKey: "refreshToken")
             a.removeValue(forKey: "expiresAt")
+            a.removeValue(forKey: "clientSecret")
+            a["clientId"] = fsPublicClientID
+            fsAuth = a
         }
-        a["clientId"] = c
-        if !s.isEmpty { a["clientSecret"] = s }
-        fsAuth = a
-        return ["ok": true, "hasSecret": true, "clientId": c,
-                "secretLength": ((a["clientSecret"] as? String) ?? "").count]
+    }
+
+    private func newPKCEChallenge() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        for i in 0..<bytes.count { bytes[i] = UInt8.random(in: 0...255) }
+        let verifier = Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        pkceVerifier = verifier
+        let digest = SHA256.hash(data: Data(verifier.utf8))
+        return Data(digest).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    func fsAuthState() -> [String: Any] {
+        migrateAuthIfNeeded()
+        let a = fsAuth
+        let hasToken = !((a["refreshToken"] as? String) ?? "").isEmpty
+        return ["hasSecret": true,
+                "secretLength": 0,
+                "connected": hasToken,
+                "clientId": fsPublicClientID]
     }
 
     func fsSignOut() -> [String: Any] {
@@ -392,14 +404,17 @@ final class Backend {
     }
 
     func fsAuthorizeURL(state: String) -> URL? {
-        guard !fsActiveClientID.isEmpty else { return nil }
+        migrateAuthIfNeeded()
+        let challenge = newPKCEChallenge()
         var c = URLComponents(string: "https://www.fitnesssyncer.com/api/oauth/authorize")
         c?.queryItems = [
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id", value: fsActiveClientID),
             URLQueryItem(name: "redirect_uri", value: fsRedirectURI),
             URLQueryItem(name: "scope", value: fsScopes),
-            URLQueryItem(name: "state", value: state)
+            URLQueryItem(name: "state", value: state),
+            URLQueryItem(name: "code_challenge", value: challenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256")
         ]
         return c?.url
     }
@@ -478,16 +493,22 @@ final class Backend {
     }
 
     func fsExchangeCode(_ code: String) -> [String: Any] {
-        guard let secret = fsAuth["clientSecret"] as? String, !secret.isEmpty else {
-            return ["ok": false, "message": "客户端密钥没拿到，回界面粘贴后再点「登录并授权」"]
+        migrateAuthIfNeeded()
+        guard let verifier = pkceVerifier, !verifier.isEmpty else {
+            return ["ok": false, "message": "授权校验码丢了，再点一次「登录并授权」"]
         }
-        let body = formBody([
+        pkceVerifier = nil
+        var pairs: [(String, String)] = [
             ("grant_type", "authorization_code"),
             ("code", code),
             ("client_id", fsActiveClientID),
-            ("client_secret", secret),
-            ("redirect_uri", fsRedirectURI)
-        ])
+            ("redirect_uri", fsRedirectURI),
+            ("code_verifier", verifier)
+        ]
+        if let secret = fsAuth["clientSecret"] as? String, !secret.isEmpty {
+            pairs.append(("client_secret", secret))
+        }
+        let body = formBody(pairs)
         let (status, data) = http("POST", "https://api.fitnesssyncer.com/api/oauth/access_token",
                                   body: body, contentType: "application/x-www-form-urlencoded")
         guard status == 200, let obj = tokenJSON(data), obj["access_token"] is String else {
@@ -500,22 +521,25 @@ final class Backend {
     }
 
     private func fsToken(force: Bool = false) -> String? {
+        migrateAuthIfNeeded()
         let a = fsAuth
         let now = Date().timeIntervalSince1970
         let exp = (a["expiresAt"] as? Double) ?? 0
         let cached = (a["accessToken"] as? String) ?? ""
         if !force, !cached.isEmpty, exp - now > 120 { return cached }
-        guard let rt = a["refreshToken"] as? String, !rt.isEmpty,
-              let secret = a["clientSecret"] as? String, !secret.isEmpty else {
+        guard let rt = a["refreshToken"] as? String, !rt.isEmpty else {
             return cached.isEmpty ? nil : cached
         }
-        let body = formBody([
+        var pairs: [(String, String)] = [
             ("grant_type", "refresh_token"),
             ("refresh_token", rt),
             ("client_id", fsActiveClientID),
-            ("client_secret", secret),
             ("redirect_uri", fsRedirectURI)
-        ])
+        ]
+        if let secret = a["clientSecret"] as? String, !secret.isEmpty {
+            pairs.append(("client_secret", secret))
+        }
+        let body = formBody(pairs)
         let (status, data) = http("POST", "https://api.fitnesssyncer.com/api/oauth/access_token",
                                   body: body, contentType: "application/x-www-form-urlencoded")
         if status == 200, let obj = tokenJSON(data), obj["access_token"] is String {
@@ -954,7 +978,9 @@ final class FsAuthWindow: NSObject, WKNavigationDelegate, NSWindowDelegate {
             let rejected = s.contains("请求无效") || s.contains("The request is invalid")
             let denied = s.contains("拒绝") && s.contains("授权")
             if rejected || denied {
-                self.hint.stringValue = "FitnessSyncer 拒绝了这个请求：回开发者页面重新复制 ID 和密钥再试"
+                self.hint.stringValue = self.destinationMode
+                    ? "颂拓拒绝了这次登录：关掉窗口，重新点「登录颂拓国际」"
+                    : "FitnessSyncer 拒绝了这个请求：关掉窗口，重新点「登录并授权」再试"
                 self.hint.textColor = .systemRed
             }
         }
@@ -1131,15 +1157,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 self.reply(id: id, ok: (r["ok"] as? Bool) ?? false, data: r)
             }
 
-        case "fsSaveSecret":
-            let secret = payload["secret"] as? String ?? ""
-            let cid = payload["clientId"] as? String ?? ""
-            workQueue.async { [weak self] in
-                guard let self = self else { return }
-                let r = self.backend.fsSaveSecret(secret, clientId: cid)
-                self.reply(id: id, ok: (r["ok"] as? Bool) ?? false, data: r)
-            }
-
         case "fsSignOut":
             workQueue.async { [weak self] in
                 guard let self = self else { return }
@@ -1150,11 +1167,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         case "fsStartAuth":
             workQueue.async { [weak self] in
                 guard let self = self else { return }
-                let st = self.backend.fsAuthState()
-                guard (st["hasSecret"] as? Bool) == true else {
-                    self.reply(id: id, ok: false, data: ["message": "先填客户端 ID、粘贴密钥，再点「登录并授权」"])
-                    return
-                }
                 let state = UUID().uuidString.replacingOccurrences(of: "-", with: "")
                 guard let url = self.backend.fsAuthorizeURL(state: state) else {
                     self.reply(id: id, ok: false, data: ["message": "授权地址拼不出来"])

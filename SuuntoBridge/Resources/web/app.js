@@ -6,7 +6,6 @@ const HAS_BRIDGE = !!(window.webkit && window.webkit.messageHandlers && window.w
 // 浏览器里直接打开时用假数据预览样子
 const MOCK = {
   status: { hasCN: true, hasGlobal: false, emailCN: "you@example.com", defaultFolder: "/Users/you/Downloads/颂拓导出", fs: { hasSecret: false, connected: false, clientId: "" }, },
-  fsSaveSecret: { ok: true, hasSecret: true, secretLength: 40 },
   fsStartAuth: { ok: true },
   fsConnect: { ok: true, sources: [
     { id: "1", name: "Suunto (中国区)" }, { id: "2", name: "Strava" }, { id: "3", name: "Garmin" }
@@ -77,7 +76,7 @@ window.__event = (e) => {
 };
 
 const $ = (id) => document.getElementById(id);
-const prettyPath = (p) => (p || "").replace(/^\/Users\/[^/]+/, "~");
+const prettyPath = (p) => (p || "").replace(/^\/Users\/[^/]+/, "~").replace(/^[A-Za-z]:\\Users\\[^\\]+/, "~");
 
 function showFolder(el, path) {
   el.textContent = path ? prettyPath(path) : "—";
@@ -480,14 +479,9 @@ let uploadFolder = localStorage.getItem("uploadFolder") || "";
 let busyUpload = false;
 
 function applyFsUI() {
-  const { hasSecret, connected } = state.fs;
+  const connected = !!state.fs.connected;
   const chipEl = $("fsChip");
-  $("clientId").value = state.fs.clientId || "";
-  $("secret").value = "";
-  $("secret").placeholder = hasSecret ? "已保存，留空沿用；要换就粘贴新的" : "粘贴客户端密钥";
-  $("clientId").disabled = connected;
-  $("secret").disabled = connected;
-  $("signOutBtn").classList.toggle("hidden", !hasSecret && !connected);
+  $("signOutBtn").classList.toggle("hidden", !connected);
   $("uploadCard").classList.toggle("hidden", !connected);
   const authBtn = $("authBtn");
 
@@ -499,14 +493,12 @@ function applyFsUI() {
     $("fsHint").className = "hint ok";
     $("fsHint").textContent = "授权有效，选好文件夹就能把 .fit 批量送进去。";
   } else {
-    chip(chipEl, hasSecret ? "待授权" : "未连接", hasSecret ? "warn" : "");
+    chip(chipEl, "未连接", "");
     authBtn.textContent = "登录并授权";
     authBtn.className = "btn primary";
     authBtn.disabled = false;
     $("fsHint").className = "hint";
-    $("fsHint").textContent = hasSecret
-      ? "点「登录并授权」，在弹出的窗口里登录 FitnessSyncer。框里留空就用上次存好的那对。"
-      : "把开发者页面上同一行应用程序的客户端 ID 和客户端密钥粘进来，点「登录并授权」即可，点的时候会自动保存。";
+    $("fsHint").textContent = "点「登录并授权」，在弹窗里登录你自己的 FitnessSyncer 账号并同意即可，不用填任何东西。";
   }
   if (!uploadFolder) {
     $("uploadFolder").textContent = prettyPath(exportFolder) || "—";
@@ -562,22 +554,12 @@ async function refreshUploadStats() {
 
 
 $("authBtn").addEventListener("click", async () => {
-  const cid = $("clientId").value.trim();
-  const raw = $("secret").value.trim();
-  if (!cid) { chip($("fsChip"), "先填客户端 ID", "warn"); $("clientId").focus(); return; }
-  if (!raw && !state.fs.hasSecret) { chip($("fsChip"), "先粘贴客户端密钥", "warn"); $("secret").focus(); return; }
   const btn = $("authBtn");
   btn.disabled = true;
   chip($("fsChip"), "授权中…", "warn");
   $("fsHint").className = "hint";
   $("fsHint").textContent = "在弹出窗口里登录 FitnessSyncer 并点同意，窗口会自己关。";
   try {
-    const saved = await call("fsSaveSecret", { secret: raw, clientId: cid });
-    state.fs = Object.assign({}, state.fs, {
-      hasSecret: true,
-      clientId: cid,
-      secretLength: (saved && saved.secretLength) || raw.length || state.fs.secretLength
-    });
     await call("fsStartAuth");
     chip($("fsChip"), "已授权", "ok");
     state.fs.connected = true;
@@ -689,6 +671,11 @@ function fmtDate(ms) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+function setDestButtonStyle(authed) {
+  $("destAuthBtn").className = authed ? "btn ghost" : "btn primary";
+  $("destBtn").className = authed ? "btn primary big" : "btn ghost big";
+}
+
 function renderDest() {
   const s = destState;
   if (!s) return;
@@ -701,25 +688,30 @@ function renderDest() {
   if (!fsOn || s.needFs) {
     chip(chipEl, "未连接", "");
     stateEl.textContent = "第一步：先到「上传到 FitnessSyncer」里登录授权，再回来。";
-    btn.disabled = false;
-    btn.textContent = "去连接 FitnessSyncer";
+    setDestButtonStyle(false);
+    btn.style.display = "none";
     btn.dataset.action = "gotoFs";
-    authBtn.disabled = true;
+    authBtn.disabled = false;
+    authBtn.textContent = "登录颂拓国际";
     setDestBar("", null);
     return;
   }
+  btn.style.display = "";
   if (!s.ok) {
     chip(chipEl, "连不上", "bad");
     stateEl.textContent = s.message || "读不到接收方状态";
+    setDestButtonStyle(false);
     btn.disabled = false;
     btn.textContent = "重新检查";
     btn.dataset.action = "refresh";
     authBtn.disabled = false;
+    authBtn.textContent = "登录颂拓国际";
     setDestBar("", null);
     return;
   }
 
   const authed = !!s.authed;
+  setDestButtonStyle(authed);
   authBtn.disabled = false;
   authBtn.textContent = authed ? "重新登录颂拓国际" : "登录颂拓国际";
 
@@ -890,6 +882,12 @@ $("destBtn").addEventListener("click", async () => {
 
 $("destAuthBtn").addEventListener("click", async () => {
   if (destBusy) return;
+  if (!(state.fs && state.fs.connected)) {
+    const tabBtn = document.querySelector('.tab[data-pane="two"]');
+    if (tabBtn) tabBtn.click();
+    chip($("fsChip"), "先完成这一步", "warn");
+    return;
+  }
   const authBtn = $("destAuthBtn");
   const log = $("destLog");
   destBusy = true;
