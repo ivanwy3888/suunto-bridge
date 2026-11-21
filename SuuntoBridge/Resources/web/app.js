@@ -24,12 +24,29 @@ const MOCK = {
     }
     return { success: 256, failed: 0 };
   },
+  corosLogin: { ok: true, email: "you@example.com" },
+  corosImportStart: async (emit) => {
+    const total = 256;
+    for (let i = 8; i <= total; i += 8) {
+      emit({ type: "item", index: i, total, name: "20241130-0951_a22_sampleactivity01.fit", note: "", ok: i, skip: 0, fail: 0 });
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    return { ok: true, total, success: 256, duplicate: 0, failed: 0, failures: [] };
+  },
+  garminImportStart: async (emit) => {
+    const total = 256;
+    for (let i = 4; i <= total; i += 4) {
+      emit({ type: "item", index: i, total, name: "20241130-0951_a22_sampleactivity01.fit", note: "", ok: i, skip: 0, fail: 0 });
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    return { ok: true, total, success: 256, duplicate: 0, failed: 0, failures: [] };
+  },
 };
 
 function call(cmd, payload = {}) {
   return new Promise((resolve, reject) => {
     if (!HAS_BRIDGE) {
-      if (cmd === "export" || cmd === "suuntoImportStart") {
+      if (cmd === "export" || cmd === "suuntoImportStart" || cmd === "corosImportStart" || cmd === "garminImportStart") {
         const f = onEvent[cmd === "export" ? "export" : "import"];
         MOCK[cmd]((e) => { if (f) f(e); }).then(resolve, reject);
         return;
@@ -130,7 +147,7 @@ let exportScope = "all";
 let exportQueried = false;
 let busyExport = false;
 
-const state = { hasCN: false, hasGlobal: false };
+const state = { hasCN: false, hasGlobal: false, hasCoros: false };
 const savedEmail = (r) =>
   localStorage.getItem("email_" + r) || state[r === "cn" ? "emailCN" : "emailGlobal"] || "";
 
@@ -163,11 +180,18 @@ async function init() {
   const st = await call("status");
   state.hasCN = !!st.hasCN;
   state.hasGlobal = !!st.hasGlobal;
+  state.hasCoros = !!st.hasCoros;
   state.emailCN = st.emailCN || "";
   state.emailGlobal = st.emailGlobal || "";
+  if (st.hasCoros) {
+    $("corosEmail").value = st.emailCoros || "";
+    chip($("corosChip"), "已登录", "ok");
+  }
   exportFolder = localStorage.getItem("exportFolder") || st.defaultFolder || "";
   showFolder($("exportFolder"), exportFolder);
   showFolder($("importFolder"), exportFolder);
+  showFolder($("corosFolder"), exportFolder);
+  showFolder($("garminFolder"), exportFolder);
   initScope();
   applyLoginUI();
   sizeGlow();
@@ -455,7 +479,178 @@ $("exportBtn").addEventListener("click", async () => {
 
 $("stopExportBtn").addEventListener("click", () => { call("cancel").catch(() => {}); });
 
-// ---------- 模块二：导入颂拓国际 ----------
+// ---------- 模块二·高驰 ----------
+
+$("corosLoginBtn").addEventListener("click", async () => {
+  const email = $("corosEmail").value.trim();
+  const password = $("corosPassword").value;
+  const chipEl = $("corosChip");
+  if (!email || !password) { chip(chipEl, "先填邮箱和密码", "warn"); return; }
+  const btn = $("corosLoginBtn");
+  btn.disabled = true;
+  chip(chipEl, "登录中…", "warn");
+  try {
+    const r = await call("corosLogin", { email, password });
+    $("corosPassword").value = "";
+    $("corosEmail").value = r.email || email;
+    state.hasCoros = true;
+    chip(chipEl, "已登录", "ok");
+  } catch (e) {
+    chip(chipEl, "登录失败", "bad");
+    logLine($("corosLog"), e.message || "高驰登录失败", "bad");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("corosOpenFinderBtn").addEventListener("click", async () => {
+  if (!exportFolder) { chip($("corosImportChip"), "先在「下载记录」里选文件夹", "warn"); return; }
+  try {
+    await call("openExportFolder", { folder: exportFolder });
+  } catch (e) {
+    chip($("corosImportChip"), e.message || "打不开文件夹", "bad");
+  }
+});
+
+$("corosStartBtn").addEventListener("click", async () => {
+  const chipEl = $("corosImportChip");
+  if (!exportFolder) { chip(chipEl, "先在「下载记录」里选文件夹", "warn"); return; }
+  if (!state.hasCoros) { chip(chipEl, "先在上面登录高驰", "warn"); return; }
+
+  const btn = $("corosStartBtn");
+  const bar = $("corosBar");
+  const countEl = $("corosCount");
+  const noteEl = $("corosNote");
+  const tallyEl = $("corosTally");
+  btn.disabled = true;
+  chip(chipEl, "准备中…", "warn");
+  $("corosLog").textContent = "";
+  bar.style.width = "0%";
+  countEl.textContent = "0 / 0";
+  noteEl.textContent = "";
+  tallyEl.textContent = "正在向高驰要上传凭证…";
+
+  const t = { ok: 0, dup: 0, fail: 0 };
+  const showTally = () => {
+    tallyEl.textContent = `成功 ${t.ok} 条 · 已存在 ${t.dup} 条 · 失败 ${t.fail} 条`;
+  };
+
+  onEvent.import = (e) => {
+    if (e.type === "stage") {
+      noteEl.textContent = e.text || "";
+      logLine($("corosLog"), "· " + e.text);
+      if (/^正在导入/.test(e.text)) tallyEl.textContent = e.text;
+    } else if (e.type === "item") {
+      if (typeof e.ok === "number") t.ok = e.ok;
+      if (typeof e.skip === "number") t.dup = e.skip;
+      if (typeof e.fail === "number") t.fail = e.fail;
+      showTally();
+      setProgress(bar, countEl, noteEl, e.index, e.total, e.name || "");
+      logLine($("corosLog"), `${e.index}/${e.total} ${e.name}${e.note ? " · " + e.note : ""}`,
+        e.note && e.note.startsWith("失败") ? "bad" : (e.note === "已存在" ? "warn" : ""));
+    } else if (e.type === "progress") {
+      const p = Math.max(0, Math.min(100, e.percent || 0));
+      bar.style.width = p + "%";
+      countEl.textContent = p + "%";
+    }
+  };
+
+  try {
+    const r = await call("corosImportStart", { folder: exportFolder });
+    bar.style.width = "100%";
+    countEl.textContent = "完成";
+    noteEl.textContent = "";
+    const bad = r.failed || 0;
+    chip(chipEl, bad ? "部分失败" : "导入完成", bad ? "warn" : "ok");
+    tallyEl.textContent = `成功 ${r.success} 条 · 已存在 ${r.duplicate || 0} 条 · 失败 ${bad} 条`;
+    logLine($("corosLog"), `高驰回执：成功 ${r.success} 条，已存在 ${r.duplicate || 0} 条，失败 ${bad} 条`, bad ? "warn" : "ok");
+    if (r.failures && r.failures.length) logLine($("corosLog"), "失败示例：" + r.failures.join("；"), "bad");
+  } catch (e) {
+    chip(chipEl, e.message || "导入失败", "bad");
+    logLine($("corosLog"), e.message || "导入失败", "bad");
+    noteEl.textContent = "";
+  } finally {
+    onEvent.import = null;
+    btn.disabled = false;
+  }
+});
+
+// ---------- 模块二·佳明 ----------
+
+$("garminOpenFinderBtn").addEventListener("click", async () => {
+  if (!exportFolder) { chip($("garminImportChip"), "先在「下载记录」里选文件夹", "warn"); return; }
+  try {
+    await call("openExportFolder", { folder: exportFolder });
+  } catch (e) {
+    chip($("garminImportChip"), e.message || "打不开文件夹", "bad");
+  }
+});
+
+$("garminStopBtn").addEventListener("click", () => { call("garminImportStop").catch(() => {}); });
+
+$("garminStartBtn").addEventListener("click", async () => {
+  const chipEl = $("garminImportChip");
+  if (!exportFolder) { chip(chipEl, "先在「下载记录」里选文件夹", "warn"); return; }
+
+  const btn = $("garminStartBtn");
+  const stopBtn = $("garminStopBtn");
+  const bar = $("garminBar");
+  const countEl = $("garminCount");
+  const noteEl = $("garminNote");
+  const tallyEl = $("garminTally");
+  btn.disabled = true;
+  stopBtn.classList.remove("hidden");
+  chip(chipEl, "准备中…", "warn");
+  $("garminLog").textContent = "";
+  bar.style.width = "0%";
+  countEl.textContent = "0 / 0";
+  noteEl.textContent = "";
+  tallyEl.textContent = "正在打开佳明的登录窗口…";
+
+  const t = { ok: 0, dup: 0, fail: 0 };
+  const showTally = () => {
+    tallyEl.textContent = `成功 ${t.ok} 条 · 已存在 ${t.dup} 条 · 失败 ${t.fail} 条`;
+  };
+
+  onEvent.import = (e) => {
+    if (e.type === "stage") {
+      noteEl.textContent = e.text || "";
+      logLine($("garminLog"), "· " + e.text);
+      if (/^已登录/.test(e.text)) tallyEl.textContent = e.text;
+    } else if (e.type === "item") {
+      if (typeof e.ok === "number") t.ok = e.ok;
+      if (typeof e.skip === "number") t.dup = e.skip;
+      if (typeof e.fail === "number") t.fail = e.fail;
+      showTally();
+      setProgress(bar, countEl, noteEl, e.index, e.total, e.name || "");
+      logLine($("garminLog"), `${e.index}/${e.total} ${e.name}${e.note ? " · " + e.note : ""}`,
+        e.note && e.note.startsWith("失败") ? "bad" : (e.note === "已存在" ? "warn" : ""));
+    }
+  };
+
+  try {
+    const r = await call("garminImportStart", { folder: exportFolder });
+    bar.style.width = "100%";
+    countEl.textContent = r.stopped ? "已停止" : "完成";
+    noteEl.textContent = "";
+    const bad = r.failed || 0;
+    chip(chipEl, r.stopped ? "已停止" : (bad ? "部分失败" : "导入完成"), r.stopped ? "warn" : (bad ? "warn" : "ok"));
+    tallyEl.textContent = `成功 ${r.success} 条 · 已存在 ${r.duplicate || 0} 条 · 失败 ${bad} 条`;
+    logLine($("garminLog"), `佳明回执：成功 ${r.success} 条，已存在 ${r.duplicate || 0} 条，失败 ${bad} 条`, bad ? "warn" : "ok");
+    if (r.failures && r.failures.length) logLine($("garminLog"), "失败示例：" + r.failures.join("；"), "bad");
+    if (r.stopped) logLine($("garminLog"), "已停止，下次接着传，传过的会显示「已存在」不会重复", "warn");
+  } catch (e) {
+    chip(chipEl, e.message || "导入失败", "bad");
+    logLine($("garminLog"), e.message || "导入失败", "bad");
+    noteEl.textContent = "";
+  } finally {
+    onEvent.import = null;
+    btn.disabled = false;
+    stopBtn.classList.add("hidden");
+  }
+});
+
+// ---------- 模块二：颂拓国际 ----------
 
 $("startImportBtn").addEventListener("click", async () => {
   const chipEl = $("importChip");

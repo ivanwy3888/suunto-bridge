@@ -14,12 +14,14 @@
       <div class="logo">颂</div>
       <div class="brand-text">
         <h1>颂拓记录搬家</h1>
-        <p>把中国区的运动记录导出，再导进颂拓国际区</p>
+        <p>把中国区的运动记录导出，再导进颂拓国际、高驰或佳明</p>
       </div>
     </div>
     <div class="tabs" id="tabs">
       <button class="tab active" data-pane="one">下载记录</button>
       <button class="tab" data-pane="two">导入颂拓国际</button>
+      <button class="tab" data-pane="coros">导入高驰</button>
+      <button class="tab" data-pane="garmin">导入佳明</button>
       <button class="tab" data-pane="three">使用说明</button>
       <span class="tab-glow" id="tabGlow"></span>
     </div>
@@ -126,8 +128,103 @@
       </div>
       <ul class="g-list">
         <li>颂拓不会自动帮你认重，<b>同一条记录导两次会出现两条</b>。导之前先看一眼文件夹里的条数，导完核对一下</li>
-        <li>之前已经通过别的办法（比如 FitnessSyncer）进过颂拓的那些，再导一遍会重复，需要在颂拓里把旧的删掉</li>
+        <li>之前已经通过别的办法（比如 FitnessSyncer）进过颂拓的那批，再导一遍会重复，需要在颂拓里把旧的删掉</li>
         <li>导入页是颂拓官方的网页，登录状态只保存在这台电脑上；密码只在颂拓的页面上输，不经过这个程序</li>
+      </ul>
+    </div>
+
+  </section>
+
+  <!-- 模块二·高驰 -->
+  <section class="pane" id="pane-coros">
+
+    <div class="card">
+      <div class="card-head">
+        <h2>导入到高驰</h2>
+        <span class="chip quiet" id="corosImportChip">待开始</span>
+      </div>
+      <div class="grid2">
+        <label class="field">
+          <span>高驰邮箱</span>
+          <input id="corosEmail" type="email" autocomplete="username" placeholder="你登高驰用的邮箱">
+        </label>
+        <label class="field">
+          <span>高驰密码</span>
+          <input id="corosPassword" type="password" autocomplete="current-password" placeholder="只在内存里用，不保存">
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn" id="corosLoginBtn">登录高驰</button>
+        <span class="chip quiet" id="corosChip">未登录</span>
+      </div>
+      <div class="folder-row">
+        <div class="folder-path" id="corosFolder">—</div>
+        <button class="btn ghost" id="corosOpenFinderBtn">在 Finder 中打开</button>
+      </div>
+      <div class="row">
+        <button class="btn primary big" id="corosStartBtn">开始导入到高驰</button>
+      </div>
+      <div class="row">
+        <div class="progress-wrap">
+          <div class="progress"><div class="bar" id="corosBar"></div></div>
+          <div class="progress-label"><span id="corosCount">0 / 0</span><span id="corosNote"></span></div>
+        </div>
+      </div>
+      <div class="tally" id="corosTally">还没开始</div>
+      <div class="log" id="corosLog"></div>
+      <p class="hint">先登录一次高驰（密码只在内存里用、不保存），再点「开始导入到高驰」：程序会一条一条把文件夹里的 .fit 送进高驰，进度和结果都在下面。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>要注意的</h2>
+      </div>
+      <ul class="g-list">
+        <li>用高驰邮箱密码登录一次换令牌，<b>密码只在内存里用、不保存</b>；登录状态记在这台电脑上</li>
+        <li>高驰不支持「步行」类记录，这类会算失败，日志里能看到原因</li>
+        <li>同一条记录重复传会覆盖，不会多一条；条数多时是一条一条传，256 条大概十几分钟</li>
+        <li>导入期间别同时开高驰网页版，可能把登录状态挤掉</li>
+      </ul>
+    </div>
+
+  </section>
+
+  <!-- 模块二·佳明 -->
+  <section class="pane" id="pane-garmin">
+
+    <div class="card">
+      <div class="card-head">
+        <h2>导入到佳明（中国区）</h2>
+        <span class="chip quiet" id="garminImportChip">待开始</span>
+      </div>
+      <div class="folder-row">
+        <div class="folder-path" id="garminFolder">—</div>
+        <button class="btn ghost" id="garminOpenFinderBtn">在 Finder 中打开</button>
+      </div>
+      <div class="row">
+        <button class="btn primary big" id="garminStartBtn">开始导入到佳明</button>
+        <button class="btn ghost hidden" id="garminStopBtn">停止</button>
+      </div>
+      <div class="row">
+        <div class="progress-wrap">
+          <div class="progress"><div class="bar" id="garminBar"></div></div>
+          <div class="progress-label"><span id="garminCount">0 / 0</span><span id="garminNote"></span></div>
+        </div>
+      </div>
+      <div class="tally" id="garminTally">还没开始</div>
+      <div class="log" id="garminLog"></div>
+      <p class="hint">点「开始导入到佳明」会弹出佳明的登录窗口：第一次用在这里登录（有验证码就在窗口里输），登录好程序会自动把文件夹里的 .fit 一条一条送进去。佳明不能整包提交，256 条大约十几分钟。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>要注意的</h2>
+      </div>
+      <ul class="g-list">
+        <li>佳明会认重：同一条记录再传一次会显示「已存在」，不会多出一条，断了可以放心接着传</li>
+        <li>一条一条传，进度条走完才算完；中途点了停止，下次接着传，已传过的会跳过</li>
+        <li>颂拓的步行类记录佳明可能归到「其他」，轨迹、心率、圈都在，不影响</li>
+        <li>导入期间别同时开佳明网页版，可能把登录状态挤掉</li>
       </ul>
     </div>
 
@@ -138,14 +235,14 @@
 
     <div class="card">
       <div class="card-head">
-        <h2>两步，把记录搬到国际区</h2>
+        <h2>先下载，再往想去的平台导</h2>
       </div>
       <div class="g-flow">
         <div class="g-node"><b>① 下载记录</b><span>从中国区颂拓，把每条活动的原始文件存到你的文件夹</span></div>
         <span class="g-arrow">→</span>
-        <div class="g-node"><b>② 导入颂拓国际</b><span>程序里登一次颂拓国际区账号，之后自动把文件全送进去</span></div>
+        <div class="g-node"><b>② 导入</b><span>颂拓国际、高驰、佳明各一个选项卡：登一次账号，程序自动把文件送进去</span></div>
       </div>
-      <p class="hint">两个选项卡就是这两步，按顺序做。第一次用大约十几分钟，之后每次只要点两下。</p>
+      <p class="hint">先做①，再在②里选一个平台导；几个平台想都导，就一个一个来。第一次用大约十几分钟，之后每次只要点两下。</p>
     </div>
 
     <div class="card">
@@ -155,6 +252,8 @@
       <ul class="g-list">
         <li><b>中国区颂拓账号</b>的注册邮箱和密码（这个程序只从中国区取记录）</li>
         <li><b>颂拓国际区账号</b>的注册邮箱和密码；没有的话，导入页里可以注册</li>
+        <li>（可选）<b>高驰账号</b>：想顺带把记录导进高驰的话准备一个，在高驰那一步里登录一次</li>
+        <li>（可选）<b>佳明中国区账号</b>：想导进佳明的话准备一个，在佳明那一步的弹窗里登录一次</li>
         <li>一个用来放记录的<b>文件夹</b>，自己选，空文件夹也可以</li>
       </ul>
     </div>

@@ -42,6 +42,19 @@ SOFTWARE.
 
 仅按公开文档调用其 HTTP 接口，未包含其代码或资源。
 
+## 高驰（COROS）写入协议
+
+- 参照项目：<https://github.com/XiaoSiHwang/garmin-sync-coros>
+- 参照项目：<https://github.com/wueleven/jiajiechi-app>（佳捷驰）
+- 用途：登录换令牌、取阿里云 STS、OSS 上传、`activity/fit/import` 通知的接口行为
+- 许可：参照项目为 GPL-3.0。本项目**只参考接口事实，未复制其代码**，实现为本项目独立编写（MIT）
+
+## 佳明网页会话
+
+- 参照项目：<https://github.com/etweisberg/garmin-connect-mcp>
+- 用途：从已登录网页读取 `meta[name="csrf-token"]`，以 `connect-csrf-token` 头 + 同源会话提交（接口事实）
+- 未包含其代码；佳明上传接口行为按 `connect.garmin.cn` 网页实现
+
 ## 其他
 
 - 界面图标以系统自带的 Hiragino Sans GB 字体渲染，未附带字体文件。

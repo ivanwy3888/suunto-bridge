@@ -1289,6 +1289,705 @@ final class SuuntoUploader: NSObject, URLSessionTaskDelegate {
     }
 }
 
+// MARK: - 高驰导入上传
+
+final class CorosClient {
+    struct Session {
+        let token: String
+        let userId: String
+        let regionId: Int
+        let email: String
+    }
+
+    private static let stsSalt = "9y78gpoERW4lBNYL"
+    private let s: Session
+
+    init(session: Session) { s = session }
+
+    static func sessionFile() -> URL { sessionURL(for: "coros") }
+
+    static func loadSession() -> Session? {
+        guard let data = try? Data(contentsOf: sessionFile()),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let token = obj["accessToken"] as? String, !token.isEmpty,
+              let uid = obj["userId"] as? String, !uid.isEmpty else { return nil }
+        return Session(token: token, userId: uid,
+                       regionId: (obj["regionId"] as? Int) ?? 2,
+                       email: obj["email"] as? String ?? "")
+    }
+
+    static func saveSession(_ sess: Session) {
+        let obj: [String: Any] = ["email": sess.email, "accessToken": sess.token,
+                                  "userId": sess.userId, "regionId": sess.regionId,
+                                  "savedAt": Date().timeIntervalSince1970]
+        if let d = try? JSONSerialization.data(withJSONObject: obj) {
+            try? d.write(to: sessionFile())
+        }
+    }
+
+    static func login(email: String, password: String) -> (Session?, String) {
+        guard !email.isEmpty, !password.isEmpty else { return (nil, "先填高驰的邮箱和密码") }
+        guard let url = URL(string: "https://teamcnapi.coros.com/account/login") else {
+            return (nil, "登录地址拼不出来")
+        }
+        let body = try? JSONSerialization.data(withJSONObject: [
+            "account": email, "accountType": 2, "pwd": md5Hex(Data(password.utf8)),
+        ])
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json;charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
+        req.setValue("https://teamcnapi.coros.com/", forHTTPHeaderField: "Origin")
+        req.setValue("https://teamcnapi.coros.com/", forHTTPHeaderField: "Referer")
+        req.httpBody = body
+
+        let (status, data, netErr) = send(req, timeout: 20)
+        if let netErr = netErr { return (nil, "连不上高驰：\(netErr.localizedDescription)") }
+        if status == 401 || status == 403 { return (nil, "高驰邮箱或密码不对") }
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return (nil, "高驰没给回应（HTTP \(status)）")
+        }
+        let inner = obj["data"] as? [String: Any] ?? [:]
+        let token = str(inner["accessToken"]) ?? str(obj["accessToken"]) ?? ""
+        let uid = str(inner["userId"]) ?? str(obj["userId"]) ?? ""
+        let region = (inner["regionId"] as? NSNumber)?.intValue
+            ?? (obj["regionId"] as? NSNumber)?.intValue ?? 2
+        guard !token.isEmpty, !uid.isEmpty else {
+            if str(obj["result"]) == "1030" { return (nil, "高驰邮箱或密码不对") }
+            let msg = str(obj["message"]) ?? str(obj["msg"]) ?? "没拿到登录凭证"
+            return (nil, "高驰登录失败：\(msg)")
+        }
+        if region != 2 { return (nil, "这个账号不在高驰中国区，暂时只支持中国区账号") }
+        return (Session(token: token, userId: uid, regionId: region, email: email), "")
+    }
+
+    func uploadFolder(_ folder: String, emit: @escaping ([String: Any]) -> Void) -> [String: Any] {
+        let fm = FileManager.default
+        let names = ((try? fm.contentsOfDirectory(atPath: folder)) ?? [])
+            .filter { $0.lowercased().hasSuffix(".fit") }
+            .sorted()
+        guard !names.isEmpty else {
+            return ["ok": false, "message": "文件夹里没有 .fit 文件，先下载记录"]
+        }
+
+        var cred: (ak: String, sk: String, token: String)
+        do {
+            cred = try fetchSTS()
+        } catch {
+            return ["ok": false, "message": error.localizedDescription]
+        }
+
+        var ok = 0, dup = 0, failed = 0
+        var failures: [String] = []
+        for (idx, name) in names.enumerated() {
+            let i = idx + 1
+            var note = ""
+            do {
+                let path = (folder as NSString).appendingPathComponent(name)
+                guard let fit = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+                    throw Self.err("读不到文件")
+                }
+                let md5 = Self.md5Hex(fit)
+                let zipURL = try makeZip(fit: fit, name: name, md5: md5)
+                defer { try? fm.removeItem(at: zipURL) }
+                let zipData = try Data(contentsOf: zipURL)
+                let key = "fit_zip/\(s.userId)/\(md5).zip"
+                try putObject(zipData, key: key, cred: cred)
+                if try notifyImport(md5: md5, size: zipData.count, object: key, fileName: name) {
+                    dup += 1
+                    note = "已存在"
+                } else {
+                    ok += 1
+                }
+            } catch {
+                let msg = error.localizedDescription
+                failed += 1
+                failures.append("\(name)：\(msg)")
+                note = "失败：\(msg)"
+                emit(["type": "item", "index": i, "total": names.count, "name": name, "note": note,
+                      "ok": ok, "skip": dup, "fail": failed])
+                if msg.contains("登录过期") {
+                    emit(["type": "stage", "text": "高驰登录过期，后面 \(names.count - i) 条没传，重新登录后再点一次"])
+                    break
+                }
+                usleep(200_000)
+                continue
+            }
+            emit(["type": "item", "index": i, "total": names.count, "name": name, "note": note,
+                  "ok": ok, "skip": dup, "fail": failed])
+            if i % 10 == 0 || i == names.count {
+                emit(["type": "stage", "text": "正在导入 \(i)/\(names.count) · 成功 \(ok) · 已存在 \(dup) · 失败 \(failed)"])
+            }
+            usleep(200_000)
+        }
+        return ["ok": true, "total": names.count, "success": ok, "duplicate": dup,
+                "failed": failed, "failures": Array(failures.prefix(5))]
+    }
+
+    // MARK: 内部步骤
+
+    private func fetchSTS() throws -> (ak: String, sk: String, token: String) {
+        var comp = URLComponents(string: "https://trainingcn.coros.com/api/proxy/oss/sts")!
+        comp.queryItems = [URLQueryItem(name: "bucket", value: "coros-oss"),
+                           URLQueryItem(name: "service", value: "aliyun"),
+                           URLQueryItem(name: "v", value: "2")]
+        var req = URLRequest(url: comp.url!)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("CPL-coros-token=\(s.token)", forHTTPHeaderField: "Cookie")
+
+        let (status, data, netErr) = Self.send(req, timeout: 20)
+        if let netErr = netErr { throw Self.err("连不上高驰：\(netErr.localizedDescription)") }
+        if status == 401 || status == 403 { throw Self.err("高驰登录过期了，重新登录再点一次") }
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let credential = (obj["data"] as? [String: Any])?["credentials"] as? String else {
+            throw Self.err("高驰没给上传凭证（HTTP \(status)）")
+        }
+        let b64 = credential.replacingOccurrences(of: Self.stsSalt, with: "")
+        guard let raw = Data(base64Encoded: b64),
+              let c = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] else {
+            throw Self.err("上传凭证解不开")
+        }
+        let ak = c["AccessKeyId"] as? String ?? ""
+        let sk = (c["AccessKeySecret"] as? String) ?? (c["SecretAccessKey"] as? String) ?? ""
+        let tk = (c["SecurityToken"] as? String) ?? (c["SessionToken"] as? String) ?? ""
+        guard !ak.isEmpty, !sk.isEmpty, !tk.isEmpty else { throw Self.err("上传凭证不全") }
+        return (ak, sk, tk)
+    }
+
+    private func putObject(_ zip: Data, key: String, cred: (ak: String, sk: String, token: String)) throws {
+        guard let url = URL(string: "https://oss-cn-beijing.aliyuncs.com/coros-oss/\(key)") else {
+            throw Self.err("上传地址拼不出来")
+        }
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone(secondsFromGMT: 0)
+        df.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+        let date = df.string(from: Date())
+
+        let toSign = "PUT\n\napplication/zip\n" + date
+            + "\nx-oss-date:" + date
+            + "\nx-oss-security-token:" + cred.token
+            + "\n/coros-oss/" + key
+        let mac = HMAC<Insecure.SHA1>.authenticationCode(
+            for: Data(toSign.utf8), using: SymmetricKey(data: Data(cred.sk.utf8)))
+        let sig = Data(mac).base64EncodedString()
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setValue("application/zip", forHTTPHeaderField: "Content-Type")
+        req.setValue(date, forHTTPHeaderField: "x-oss-date")
+        req.setValue(cred.token, forHTTPHeaderField: "x-oss-security-token")
+        req.setValue("OSS \(cred.ak):\(sig)", forHTTPHeaderField: "Authorization")
+        req.httpBody = zip
+
+        let (status, data, netErr) = Self.send(req, timeout: 120)
+        if let netErr = netErr { throw Self.err("上传到高驰存储失败：\(netErr.localizedDescription)") }
+        if status >= 400 {
+            let text = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            throw Self.err("上传到高驰存储失败（HTTP \(status)）：\(text)")
+        }
+    }
+
+    // 返回 true 表示高驰那边已有这条记录
+    private func notifyImport(md5: String, size: Int, object: String, fileName: String) throws -> Bool {
+        guard let url = URL(string: "https://teamcnapi.coros.com/activity/fit/import") else {
+            throw Self.err("导入地址拼不出来")
+        }
+        let meta: [String: Any] = ["source": 1, "timezone": 32, "bucket": "coros-oss",
+                                   "md5": md5, "size": size, "object": object,
+                                   "serviceName": "aliyun", "oriFileName": fileName]
+        let metaData = try JSONSerialization.data(withJSONObject: meta)
+        let boundary = "----CorosBridge\(UUID().uuidString)"
+        var body = Data()
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"jsonParameter\"\r\n".utf8))
+        body.append(Data("Content-Type: application/json\r\n\r\n".utf8))
+        body.append(metaData)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
+        req.setValue(s.token, forHTTPHeaderField: "accesstoken")
+        req.httpBody = body
+
+        let (status, data, netErr) = Self.send(req, timeout: 60)
+        if let netErr = netErr { throw Self.err("连不上高驰：\(netErr.localizedDescription)") }
+        if status == 401 || status == 403 { throw Self.err("高驰登录过期了，重新登录再点一次") }
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            throw Self.err("高驰没给结果（HTTP \(status)）")
+        }
+        let result = Self.str(obj["result"]) ?? ""
+        let message = Self.str(obj["message"]) ?? ""
+        if result == "0000" { return false }
+        if result == "1003" || message.lowercased().contains("exist") { return true }
+        if message.contains("token") && (message.lowercased().contains("invalid") || message.lowercased().contains("expired")) {
+            throw Self.err("高驰登录过期了，重新登录再点一次")
+        }
+        throw Self.err("高驰没认这条（\(message.isEmpty ? "result=\(result)" : message)）")
+    }
+
+    private func makeZip(fit: Data, name: String, md5: String) throws -> URL {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("coros-\(UUID().uuidString)", isDirectory: true)
+        let dir = root.appendingPathComponent(md5, isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        try fit.write(to: dir.appendingPathComponent(name))
+        let out = fm.temporaryDirectory.appendingPathComponent("coros-\(UUID().uuidString).zip")
+        defer { try? fm.removeItem(at: root) }
+
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        p.currentDirectoryURL = root
+        p.arguments = ["-q", "-X", out.path, "\(md5)/\(name)"]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        try p.run()
+        p.waitUntilExit()
+        guard p.terminationStatus == 0, fm.fileExists(atPath: out.path) else {
+            throw Self.err("打包失败")
+        }
+        return out
+    }
+
+    // MARK: 小工具
+
+    private static func err(_ msg: String) -> NSError {
+        NSError(domain: "CorosBridge", code: 1, userInfo: [NSLocalizedDescriptionKey: msg])
+    }
+
+    private static func str(_ v: Any?) -> String? {
+        if let s = v as? String { return s }
+        if let n = v as? NSNumber { return n.stringValue }
+        return nil
+    }
+
+    static func md5Hex(_ d: Data) -> String {
+        Insecure.MD5.hash(data: d).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func send(_ req: URLRequest, timeout: TimeInterval) -> (Int, Data, Error?) {
+        var r = req
+        r.timeoutInterval = timeout
+        let sem = DispatchSemaphore(value: 0)
+        var outData = Data()
+        var status = 0
+        var outErr: Error?
+        URLSession.shared.dataTask(with: r) { d, resp, e in
+            outData = d ?? Data()
+            status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            outErr = e
+            sem.signal()
+        }.resume()
+        _ = sem.wait(timeout: .now() + timeout + 5)
+        return (status, outData, outErr)
+    }
+}
+
+// MARK: - 佳明导入（网页登录态 + 同源接口）
+
+final class GarminImportWindow: NSObject, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
+    private var window: NSWindow!
+    private var web: WKWebView!
+    private var hint: NSTextField!
+    private var popups: [ObjectIdentifier: (NSWindow, WKWebView)] = [:]
+
+    private let homeURL = URL(string: "https://connect.garmin.cn/app/")!
+
+    func show() {
+        if window == nil { build() }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func reloadTapped() {
+        web.load(URLRequest(url: homeURL))
+    }
+
+    @objc private func closeTapped() {
+        window?.close()
+    }
+
+    private func build() {
+        let rect = NSRect(x: 0, y: 0, width: 1080, height: 860)
+        let w = NSWindow(contentRect: rect,
+                         styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                         backing: .buffered, defer: false)
+        w.title = "佳明中国 · 登录"
+        w.minSize = NSSize(width: 820, height: 620)
+        w.isReleasedWhenClosed = false
+        w.delegate = self
+
+        let container = NSView(frame: rect)
+        container.autoresizingMask = [.width, .height]
+
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
+
+        web = WKWebView(frame: NSRect(x: 0, y: 46, width: rect.width, height: rect.height - 46),
+                        configuration: config)
+        web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15"
+        web.navigationDelegate = self
+        web.uiDelegate = self
+        web.autoresizingMask = [.width, .height]
+        container.addSubview(web)
+
+        let bar = NSView(frame: NSRect(x: 0, y: 0, width: rect.width, height: 46))
+        bar.autoresizingMask = [.width, .maxYMargin]
+        let line = NSBox(frame: NSRect(x: 0, y: 45, width: rect.width, height: 1))
+        line.boxType = .separator
+        line.autoresizingMask = [.width, .minYMargin]
+        bar.addSubview(line)
+
+        hint = NSTextField(labelWithString: "第一次用在这里登录佳明（有验证码就在这个窗口里输）；登录好会自动开始上传")
+        hint.frame = NSRect(x: 16, y: 13, width: rect.width - 260, height: 20)
+        hint.font = .systemFont(ofSize: 11.5)
+        hint.textColor = .secondaryLabelColor
+        hint.lineBreakMode = .byTruncatingTail
+        hint.autoresizingMask = [.width]
+        bar.addSubview(hint)
+
+        let reload = NSButton(title: "回到佳明", target: self, action: #selector(reloadTapped))
+        reload.bezelStyle = .rounded
+        reload.frame = NSRect(x: rect.width - 216, y: 9, width: 104, height: 28)
+        reload.autoresizingMask = [.minXMargin, .maxYMargin]
+        bar.addSubview(reload)
+
+        let close = NSButton(title: "关闭", target: self, action: #selector(closeTapped))
+        close.bezelStyle = .rounded
+        close.keyEquivalent = "\u{1b}"
+        close.frame = NSRect(x: rect.width - 104, y: 9, width: 88, height: 28)
+        close.autoresizingMask = [.minXMargin, .maxYMargin]
+        bar.addSubview(close)
+
+        container.addSubview(bar)
+        w.contentView = container
+        window = w
+        web.load(URLRequest(url: homeURL))
+    }
+
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction,
+                 windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard let url = navigationAction.request.url else { return nil }
+        let pv = WKWebView(frame: NSRect(x: 0, y: 0, width: 560, height: 720),
+                           configuration: configuration)
+        pv.customUserAgent = web.customUserAgent
+        pv.navigationDelegate = self
+        pv.uiDelegate = self
+        let pw = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 720),
+                          styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        pw.title = "佳明"
+        pw.isReleasedWhenClosed = false
+        pw.contentView = pv
+        popups[ObjectIdentifier(pv)] = (pw, pv)
+        pv.load(URLRequest(url: url))
+        pw.center()
+        pw.makeKeyAndOrderFront(nil)
+        return pv
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        if let (pw, _) = popups.removeValue(forKey: ObjectIdentifier(webView)) { pw.close() }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let w = notification.object as? NSWindow, w === window else { return }
+        for (_, pair) in popups { pair.0.close() }
+        popups.removeAll()
+        window = nil
+        web = nil
+    }
+
+    private var onAppPage: Bool {
+        guard let u = web?.url else { return false }
+        return u.host == "connect.garmin.cn" && u.path.hasPrefix("/app")
+    }
+
+    private func probeLogin(_ completion: @escaping (Bool) -> Void) {
+        guard let web = web else { completion(false); return }
+        let body = """
+        try {
+          const r = await fetch('/app/proxy/userprofile-service/socialProfile', {
+            credentials: 'include', headers: { 'Accept': 'application/json' }
+          });
+          const t = await r.text();
+          return r.status === 200 && t.trim().startsWith('{') ? 'yes' : 'no';
+        } catch (e) {
+          return 'no';
+        }
+        """
+        web.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { r in
+            if case let .success(v) = r, let s = v as? String, s == "yes" {
+                completion(true)
+            } else {
+                completion(false)
+            }
+        }
+    }
+
+    private var loginGen = 0
+
+    func waitForLogin(timeout: TimeInterval, completion: @escaping (Bool) -> Void) {
+        loginGen += 1
+        let gen = loginGen
+        let deadline = Date().addingTimeInterval(timeout)
+        func poll() {
+            guard gen == loginGen else { return }
+            guard web != nil else { completion(false); return }
+            guard Date() < deadline else { completion(false); return }
+            if onAppPage {
+                probeLogin { ok in
+                    guard gen == self.loginGen else { return }
+                    if ok { completion(true); return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { poll() }
+                }
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { poll() }
+        }
+        poll()
+    }
+
+    func uploadOne(base64: String, name: String, completion: @escaping ([String: Any]) -> Void) {
+        guard let web = web else {
+            completion(["status": 0, "url": "", "body": "登录窗口已经关掉了"])
+            return
+        }
+        let body = """
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const fd = new FormData();
+        fd.append('file', new File([bytes], name, { type: 'application/octet-stream' }));
+        let csrf = '';
+        const m = document.querySelector('meta[name="csrf-token"]');
+        if (m && m.content) csrf = m.content;
+        if (!csrf) {
+          for (const kv of document.cookie.split('; ')) {
+            const i = kv.indexOf('=');
+            const k = i >= 0 ? kv.slice(0, i) : kv;
+            if (/csrf/i.test(k)) { csrf = decodeURIComponent(kv.slice(i + 1)); break; }
+          }
+        }
+        const headers = { 'Accept': 'application/json, */*' };
+        if (csrf) headers['connect-csrf-token'] = csrf;
+        const paths = ['/app/proxy/upload-service/upload/fit', '/app/proxy/upload-service/upload/.fit'];
+        let resp = null;
+        for (const p of paths) {
+          try {
+            resp = await fetch(p, { method: 'POST', body: fd, credentials: 'include', headers });
+          } catch (e) { resp = null; continue; }
+          if (resp.status !== 404) break;
+        }
+        if (!resp) return JSON.stringify({ status: 0, url: '', body: '网络请求没有发出去' });
+        const text = await resp.text();
+        return JSON.stringify({ status: resp.status, url: resp.url, body: text.slice(0, 4000) });
+        """
+        web.callAsyncJavaScript(body, arguments: ["b64": base64, "name": name], in: nil, in: .page) { r in
+            guard case let .success(v) = r, let s = v as? String,
+                  let d = try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? [String: Any]
+            else {
+                completion(["status": 0, "url": "", "body": "上传脚本没有返回结果"])
+                return
+            }
+            completion(d)
+        }
+    }
+}
+
+final class GarminRunner {
+    enum Outcome {
+        case ok
+        case dup
+        case fail(String)
+        case auth
+    }
+
+    private weak var win: GarminImportWindow?
+    private let folder: String
+    private var names: [String] = []
+    private var pos = 0
+    private var stopped = false
+    private var authLost = false
+    private var finished = false
+    private var ok = 0
+    private var dup = 0
+    private var fail = 0
+    private var failures: [String] = []
+    private var emit: (([String: Any]) -> Void)?
+    private var done: (([String: Any]) -> Void)?
+
+    init(folder: String) {
+        self.folder = folder
+    }
+
+    func stop() { stopped = true }
+
+    func start(win: GarminImportWindow,
+               emit: @escaping ([String: Any]) -> Void,
+               done: @escaping ([String: Any]) -> Void) {
+        self.win = win
+        self.emit = emit
+        self.done = done
+        let folder = self.folder
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let list = ((try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? [])
+                .filter { $0.lowercased().hasSuffix(".fit") }
+                .sorted()
+            DispatchQueue.main.async {
+                guard !list.isEmpty else {
+                    self.finish(extra: ["message": "文件夹里没有 .fit 文件，先下载记录"])
+                    return
+                }
+                self.names = list
+                emit(["type": "stage", "text": "已登录，共 \(list.count) 条，开始一条一条送进佳明…"])
+                self.step()
+            }
+        }
+    }
+
+    private func step() {
+        if finished { return }
+        if stopped || authLost || pos >= names.count {
+            finish()
+            return
+        }
+        let name = names[pos]
+        let path = (folder as NSString).appendingPathComponent(name)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let data = (try? Data(contentsOf: URL(fileURLWithPath: path))) ?? Data()
+            DispatchQueue.main.async {
+                if self.stopped || self.authLost { self.finish(); return }
+                guard let win = self.win else {
+                    self.finish(extra: ["message": "登录窗口已经关掉了，再点一次「开始导入到佳明」"])
+                    return
+                }
+                if data.isEmpty {
+                    self.record(name: name, outcome: .fail("读不到文件"))
+                    self.advance()
+                    return
+                }
+                win.uploadOne(base64: data.base64EncodedString(), name: name) { r in
+                    if self.stopped || self.authLost { self.finish(); return }
+                    let outcome = GarminRunner.classify(r)
+                    self.record(name: name, outcome: outcome)
+                    if case .auth = outcome {
+                        self.authLost = true
+                        self.finish()
+                        return
+                    }
+                    self.advance()
+                }
+            }
+        }
+    }
+
+    private func record(name: String, outcome: Outcome) {
+        switch outcome {
+        case .ok:
+            ok += 1
+            emit(item: name, note: "")
+        case .dup:
+            dup += 1
+            emit(item: name, note: "已存在")
+        case .fail(let msg):
+            fail += 1
+            if failures.count < 5 { failures.append("\(name)：\(msg)") }
+            emit(item: name, note: "失败：" + msg)
+        case .auth:
+            break
+        }
+    }
+
+    private func emit(item name: String, note: String) {
+        emit?(["type": "item",
+               "index": pos + 1,
+               "total": names.count,
+               "name": name,
+               "note": note,
+               "ok": ok,
+               "skip": dup,
+               "fail": fail])
+    }
+
+    private func advance() {
+        pos += 1
+        if pos >= names.count {
+            finish()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { self.step() }
+    }
+
+    private func finish(extra: [String: Any] = [:]) {
+        guard !finished else { return }
+        finished = true
+        var r: [String: Any] = [
+            "ok": fail == 0 && !authLost,
+            "total": names.count,
+            "success": ok,
+            "duplicate": dup,
+            "failed": fail,
+            "stopped": stopped,
+        ]
+        if authLost {
+            r["message"] = "佳明登录状态掉了：在窗口里重新登录一次，再点「开始导入到佳明」（已传过的会显示已存在，不会多出来）"
+        }
+        if !failures.isEmpty { r["failures"] = failures }
+        for (k, v) in extra { r[k] = v }
+        done?(r)
+    }
+
+    static func classify(_ r: [String: Any]) -> Outcome {
+        let status = (r["status"] as? Int) ?? 0
+        let url = (r["url"] as? String) ?? ""
+        let body = (r["body"] as? String) ?? ""
+        if url.contains("/signin") || url.contains("/sso/") || body.contains("Garmin Connect | Sign In") {
+            return .auth
+        }
+        if status == 401 || status == 403 { return .auth }
+        if status == 409 { return .dup }
+        if status == 0 {
+            return .fail(body.isEmpty ? "网络请求没有发出去" : snippet(body))
+        }
+        var json: [String: Any]?
+        if let o = try? JSONSerialization.jsonObject(with: Data(body.utf8)) {
+            json = o as? [String: Any]
+        }
+        let dir = json?["detailedImportResult"] as? [String: Any]
+        if (200...299).contains(status) {
+            if let fails = dir?["failures"] as? [[String: Any]], !fails.isEmpty {
+                var msg = ""
+                for f in fails {
+                    if let ms = f["messages"] as? [String], let m = ms.first { msg = m; break }
+                    if let m = f["message"] as? String, !m.isEmpty { msg = m; break }
+                }
+                return .fail(snippet(msg.isEmpty ? "佳明没认这个文件" : msg))
+            }
+            if let up = dir?["uploadId"], !(up is NSNull) {
+                if let n = up as? NSNumber { return n.intValue == 0 ? .dup : .ok }
+                if let s = up as? String, !s.isEmpty, s != "0" { return .ok }
+            }
+            // 有的版本只回 202 空壳
+            if status == 202, json == nil { return .fail("佳明返回空回执") }
+            return .dup
+        }
+        let msg = (json?["message"] as? String) ?? ""
+        return .fail("HTTP \(status)" + (msg.isEmpty ? "：" + snippet(body) : "：" + snippet(msg)))
+    }
+
+    private static func snippet(_ s: String) -> String {
+        let one = s.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return one.count > 120 ? String(one.prefix(120)) + "…" : one
+    }
+}
+
 // MARK: - App
 
 final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate {
@@ -1299,6 +1998,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     private var authWindow: FsAuthWindow?
     private var suuntoWindow: SuuntoImportWindow?
     private var uploader: SuuntoUploader?
+    private var garminWindow: GarminImportWindow?
+    private var garminRunner: GarminRunner?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let config = WKWebViewConfiguration()
@@ -1349,11 +2050,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
         switch cmd {
         case "status":
+            let coros = CorosClient.loadSession()
             var st: [String: Any] = ["hasCN": backend.hasSession(region: "cn"),
                                      "hasGlobal": backend.hasSession(region: "global"),
                                      "busy": backend.isBusy(),
                                      "emailCN": backend.email(for: "cn"),
                                      "emailGlobal": backend.email(for: "global"),
+                                     "hasCoros": coros != nil,
+                                     "emailCoros": coros?.email ?? "",
                                      "fs": backend.fsAuthState()]
             if let home = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
                 st["defaultFolder"] = home.appendingPathComponent("颂拓导出").path
@@ -1603,6 +2307,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                     }
                 }
             }
+
+        case "corosLogin":
+            let email = (payload["email"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            let password = payload["password"] as? String ?? ""
+            workQueue.async { [weak self] in
+                guard let self = self else { return }
+                let (sess, msg) = CorosClient.login(email: email, password: password)
+                if let sess = sess {
+                    CorosClient.saveSession(sess)
+                    self.reply(id: id, ok: true, data: ["ok": true, "email": sess.email])
+                } else {
+                    self.reply(id: id, ok: false, data: ["message": msg])
+                }
+            }
+
+        case "corosImportStart":
+            let folder = payload["folder"] as? String ?? ""
+            guard !folder.isEmpty else {
+                reply(id: id, ok: false, data: ["message": "先在「下载记录」里选好文件夹"])
+                return
+            }
+            guard let sess = CorosClient.loadSession() else {
+                reply(id: id, ok: false, data: ["message": "先在上面登录高驰账号"])
+                return
+            }
+            workQueue.async { [weak self] in
+                guard let self = self else { return }
+                self.sendEvent(["type": "stage", "text": "正在向高驰要上传凭证…"])
+                let r = CorosClient(session: sess).uploadFolder(folder) { e in
+                    self.sendEvent(e)
+                }
+                self.reply(id: id, ok: (r["ok"] as? Bool) ?? false, data: r)
+            }
+
+        case "garminImportStart":
+            let folder = payload["folder"] as? String ?? ""
+            guard !folder.isEmpty else {
+                reply(id: id, ok: false, data: ["message": "先在「下载记录」里选好文件夹"])
+                return
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if self.garminRunner != nil {
+                    self.reply(id: id, ok: false, data: ["message": "正在导入，先等它跑完或者点停止"])
+                    return
+                }
+                if self.garminWindow == nil { self.garminWindow = GarminImportWindow() }
+                guard let gw = self.garminWindow else {
+                    self.reply(id: id, ok: false, data: ["message": "打不开佳明窗口"])
+                    return
+                }
+                gw.show()
+                self.sendEvent(["type": "stage", "text": "在窗口里登录佳明（有验证码就在窗口里输），登录好会自动开始"])
+                gw.waitForLogin(timeout: 1800) { ok in
+                    guard ok else {
+                        self.reply(id: id, ok: false, data: ["message": "还没等到你登录，再点一次「开始导入到佳明」"])
+                        return
+                    }
+                    let runner = GarminRunner(folder: folder)
+                    self.garminRunner = runner
+                    runner.start(win: gw, emit: { e in
+                        self.sendEvent(e)
+                    }, done: { r in
+                        self.garminRunner = nil
+                        self.reply(id: id, ok: (r["ok"] as? Bool) ?? false, data: r)
+                    })
+                }
+            }
+
+        case "garminImportStop":
+            garminRunner?.stop()
+            reply(id: id, ok: true, data: [:])
 
         default:
             reply(id: id, ok: false, data: ["message": "未知指令"])
