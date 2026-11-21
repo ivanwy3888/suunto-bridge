@@ -33,7 +33,7 @@
 
 | 平台 | 文件 | 说明 |
 | --- | --- | --- |
-| macOS | `颂拓记录搬家-1.4.0.dmg` | 需要 macOS 13+，**Apple 芯片（M1 及以后）** |
+| macOS | `SuuntoBridge-1.4.0-macOS-arm64.dmg` | 需要 macOS 13+，**Apple 芯片（M1 及以后）** |
 | Windows | `SuuntoBridge-win64-v1.3.0.zip` | Windows 10/11 64 位，解压后运行 `SuuntoBridge.exe`（免安装；暂无高驰/佳明选项卡） |
 
 Mac 版没有做 Apple 开发者签名和公证，**第一次打开要右键点图标 →「打开」→ 再点一次「打开」**。直接双击会被系统拦住。
